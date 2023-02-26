@@ -24,8 +24,24 @@ BLINK = True
 DEBUG = False
 SHOW_AM_PM = False
 next_update = 0
-utc_offset_sec = [ 0.0, 0.0 ]
-tz_abbr = [ "CST", "CET" ]
+
+class ZoneInfo():
+    def __init__(self):
+        tz_name = ""
+        tz_abbr = ""
+
+zone_info = []
+zone_info.append(ZoneInfo())
+zone_info.append(ZoneInfo())
+
+zone_info[0].tz_name = "America/Chicago"
+zone_info[0].tz_abbr = "CST"
+zone_info[1].tz_name = "Europe/Madrid"
+zone_info[1].tz_abbr = "CET"
+
+for idx in range(len(zone_info)):
+    zone_info[idx].utc_offset_sec = 0
+    zone_info[idx].is_utc = False
 
 # Get wifi details and more from a secrets.py file
 try:
@@ -77,8 +93,8 @@ for idx in range(len(clock_label)):
     tz_label[idx].color = 0x0000FF
     group.append(tz_label[idx])
 
-tz_label[0].text = tz_abbr[0]
-tz_label[1].text = tz_abbr[1]
+tz_label[0].text = zone_info[0].tz_abbr
+tz_label[1].text = zone_info[1].tz_abbr
 
 status_label = Label(terminalio.FONT)
 status_label.x = 0
@@ -86,7 +102,9 @@ status_label.y = tz_label[1].y
 group.append(status_label)
 
 def update_time(*, index=0, hours=None, minutes=None, show_colon=False):
-    now = time.localtime(time.mktime(time.localtime()) + utc_offset_sec[index])
+    print("Displaying {name} ({abbr}): {offset} s".format(name=zone_info[idx].tz_name, abbr=zone_info[idx].tz_abbr, offset=zone_info[idx].utc_offset_sec))
+
+    now = time.localtime(time.mktime(time.localtime()) + zone_info[index].utc_offset_sec)
 
     if hours is None:
         hours = now[3]
@@ -151,33 +169,26 @@ while True:
                 network.connect()
 
                 # Synchronize Board's clock to Internet
-                network.get_local_time("America/Chicago")
-                # Subtract from monotonic to get an offset from a reference point.
-                utc_offset_sec[0] = time.time() - time.monotonic()
+                # This lets us calculate an offset so we can determine the UTC offset.
+                for idx in range(len(zone_info)):
+                    network.get_local_time(zone_info[idx].tz_name)
+                    # Subtract from monotonic to get an offset from a reference point.
+                    zone_info[idx].utc_offset_sec = time.time() - time.monotonic()
 
-                network.get_local_time("Europe/Madrid")
-                # Subtract from monotonic to get an offset from a reference point.
-                utc_offset_sec[1] = time.time() - time.monotonic()
-
-                # get UTC time
+                # Finally, get UTC time. All future use of time will be relative to UTC.
                 network.get_local_time("Etc/UTC")
                 # Subtract from monotonic to get an offset from a reference point.
                 offset_utc = time.time() - time.monotonic()
 
-                for idx in range(len(utc_offset_sec)):
+                for idx in range(len(zone_info)):
                     # Subtract from UTC's offset from its reference.
-                    utc_offset_sec[idx] -= offset_utc
+                    zone_info[idx].utc_offset_sec -= offset_utc
                     # Round to the nearest hour.
                     # Need to convert to int here (even with the rounding) or the minutes and seconds won't match exactly.
                     # NOTE: This will cause problems for the few timezones that don't have an even number of hours.
-                    utc_offset_sec[idx] = int(round(utc_offset_sec[idx] / 60 / 60, 0) * 60 * 60)
+                    zone_info[idx].utc_offset_sec = int(round(zone_info[idx].utc_offset_sec / 60 / 60, 0) * 60 * 60)
 
-                offset_utc -= offset_utc
-
-                # utc_offset_sec[0] = -6 * 60 * 60
-                # utc_offset_sec[1] = 60 * 60
-
-                print("offsets: {local}, {other}, {utc}".format(local=utc_offset_sec[0], other=utc_offset_sec[1], utc=offset_utc))
+                    print("{name} ({abbr}): {offset} s".format(name=zone_info[idx].tz_name, abbr=zone_info[idx].tz_abbr, offset=zone_info[idx].utc_offset_sec))
 
                 print("fetch test")
                 tz_label[1].text = "api"
@@ -223,7 +234,7 @@ while True:
             print(e)
             print("An error occured, will retry")
             next_check = time.monotonic() + 10 * 60
-            tz_label[1].text = tz_abbr[1]
+            tz_label[1].text = zone_info[1].tz_abbr
 
         status_label.text = ""
         tz_label[1].color = 0x0000FF
