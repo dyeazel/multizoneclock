@@ -142,12 +142,11 @@ def update_time(*, index=0, hours=None, minutes=None, show_colon=False):
     now = time.localtime(now_s)
 
     if now_s < 86400:
-        clock_lines[idx].zone_label.text = "???"
-    elif zone_info[idx].utc_offset_sec == 0:
-        clock_lines[idx].zone_label.text = "UTC"
+        clock_lines[index].zone_label.text = "???"
+    elif int(round(zone_info[index].utc_offset_sec, 0)) == 0:
+        clock_lines[index].zone_label.text = "UTC"
     else:
-        # print(zone_info[idx].utc_offset_sec)
-        clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
+        clock_lines[index].zone_label.text = zone_info[index].tz_abbr
 
     if hours is None:
         hours = now[3]
