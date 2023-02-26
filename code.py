@@ -7,11 +7,12 @@
 
 # general reference: https://learn.adafruit.com/adafruit-matrixportal-m4/matrixportal-library-overview
 
-
+import json
 import time
 import board
 import busio
 import displayio
+import re
 import terminalio
 from adafruit_display_shapes.rect import Rect
 from adafruit_display_text.label import Label
@@ -27,8 +28,14 @@ next_update = 0
 
 class ZoneInfo():
     def __init__(self):
+        self.utc_offset_sec = 0
+        self.is_utc = False
         self.tz_name = ""
         self.tz_abbr = ""
+        self.latitude = 0.0
+        self.longitude = 0.0
+        self.sunrise = 0
+        self.sunset = 0
 
 class ClockLine():
     def __init__(self, clock_font):
@@ -43,12 +50,14 @@ zone_info.append(ZoneInfo())
 
 zone_info[0].tz_name = "America/Chicago"
 zone_info[0].tz_abbr = "CST"
+# Madison
+zone_info[0].latitude = 43.073051
+zone_info[0].longitude = -89.401230
 zone_info[1].tz_name = "Europe/Madrid"
 zone_info[1].tz_abbr = "CET"
-
-for idx in range(len(zone_info)):
-    zone_info[idx].utc_offset_sec = 0
-    zone_info[idx].is_utc = False
+# Algorta
+zone_info[1].latitude = 43.348680
+zone_info[1].longitude = -3.010120
 
 # Get wifi details and more from a secrets.py file
 try:
@@ -104,15 +113,54 @@ status_label.x = 0
 status_label.y = clock_lines[1].zone_label.y
 group.append(status_label)
 
+
+def parse_time(value):
+    result = 0
+
+    m = re.search("(\d*)-(\d*)-(\d*)T(\d*):(\d*):(\d*)", value)
+    if m:
+        t = (
+            int(m.group(1)),
+            int(m.group(2)),
+            int(m.group(3)),
+            int(m.group(4)),
+            int(m.group(5)),
+            int(m.group(6)),
+            -1,
+            -1,
+            -1,
+        )
+
+        result = time.mktime(t)
+
+    return result
+
+
 def update_time(*, index=0, hours=None, minutes=None, show_colon=False):
-    now = time.localtime(time.mktime(time.localtime()) + zone_info[index].utc_offset_sec)
+    now_utc_s = time.mktime(time.localtime())
+    now_s = now_utc_s + zone_info[index].utc_offset_sec
+    now = time.localtime(now_s)
+
+    if now_s < 86400:
+        clock_lines[idx].zone_label.text = "???"
+    elif zone_info[idx].utc_offset_sec == 0:
+        clock_lines[idx].zone_label.text = "UTC"
+    else:
+        # print(zone_info[idx].utc_offset_sec)
+        clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
 
     if hours is None:
         hours = now[3]
-    if hours >= 18 or hours < 6:  # evening hours to morning
-        clock_lines[index].clock_label.color = color[1]
+
+    if zone_info[index].sunrise == zone_info[index].sunset:
+        clock_lines[index].clock_label.color = color[2]
+    elif (zone_info[index].sunrise < now_utc_s) and (now_utc_s < zone_info[index].sunset):
+        # sunrise/sunset stored in UTC
+        # daylight
+        clock_lines[index].clock_label.color = color[3]
     else:
-        clock_lines[index].clock_label.color = color[3]  # daylight hours
+        # night
+        clock_lines[index].clock_label.color = color[1]
 
     if SHOW_AM_PM:
         if hours > 12:  # Handle times later than 12:59
@@ -191,14 +239,19 @@ while True:
 
                     print("{name} ({abbr}): {offset} s".format(name=zone_info[idx].tz_name, abbr=zone_info[idx].tz_abbr, offset=zone_info[idx].utc_offset_sec))
 
-                print("fetch test")
-                clock_lines[1].zone_label.text = "api"
-                start_time = time.monotonic()
-                response = network.fetch_data("https://api.sunrise-sunset.org/json?lat=36.7201600&lng=-4.4203400")
-                print("-" * 40)
-                print("response in {sec}".format(sec=time.monotonic() - start_time))
-                print(response)
-                print("-" * 40)
+                    # Get the almanac (sunrise/sunset) data
+                    clock_lines[1].zone_label.text = "alm"
+                    start_time = time.monotonic()
+                    response = network.fetch_data("https://api.sunrise-sunset.org/json?formatted=0&lat={lat}&lng={lng}".format(lat=zone_info[idx].latitude, lng=zone_info[idx].longitude))
+                    zone_info[idx].almanac = json.loads(response)["results"]
+
+                    zone_info[idx].sunrise = parse_time(zone_info[idx].almanac["sunrise"])
+                    zone_info[idx].sunset = parse_time(zone_info[idx].almanac["sunset"])
+
+                    print("-" * 40)
+                    print("response in {sec}".format(sec=time.monotonic() - start_time))
+                    print(response)
+                    print("-" * 40)
 
             print("fetch time")
             TIME_URL = "https://www.yeazel2.net/api/v1/util/gettime/Central%20Standard%20Time,W.%20Europe%20Standard%20Time"
