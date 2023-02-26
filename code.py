@@ -199,6 +199,12 @@ update_time(show_colon=True)  # Display whatever time is on the board
 clock_lines[idx].clock_label.text = "  :  "
 
 while True:
+    # new logic for checking time
+    # - check every hour
+    # - check if no DST offset for at least one of the zones
+    # - check after DST changes. Need to look at ["dstInterval"]["dstStart"] and ["dstInterval"]["dstEnd"]
+    #   which are both in UTC
+
     if next_check <= time.monotonic():
         try:
             update_time(
@@ -214,57 +220,42 @@ while True:
             if not network.is_connected:
                 print("connecting")
                 clock_lines[1].zone_label.text = "net"
-                network.connect()
+                network.connect(2)
 
-                # Synchronize Board's clock to Internet
-                # This lets us calculate an offset so we can determine the UTC offset.
-                for idx in range(len(zone_info)):
-                    network.get_local_time(zone_info[idx].tz_name)
-                    # Subtract from monotonic to get an offset from a reference point.
-                    zone_info[idx].utc_offset_sec = time.time() - time.monotonic()
-
-                # Finally, get UTC time. All future use of time will be relative to UTC.
+                # Get UTC time. All future use of time will be relative to UTC.
                 network.get_local_time("Etc/UTC")
-                # Subtract from monotonic to get an offset from a reference point.
-                offset_utc = time.time() - time.monotonic()
 
-                for idx in range(len(zone_info)):
-                    # Subtract from UTC's offset from its reference.
-                    zone_info[idx].utc_offset_sec -= offset_utc
-                    # Round to the nearest hour.
-                    # Need to convert to int here (even with the rounding) or the minutes and seconds won't match exactly.
-                    # NOTE: This will cause problems for the few timezones that don't have an even number of hours.
-                    zone_info[idx].utc_offset_sec = int(round(zone_info[idx].utc_offset_sec / 60 / 60, 0) * 60 * 60)
+            for idx in range(len(zone_info)):
+                # Get the time zone data
+                clock_lines[1].zone_label.text = "TZ"
+                start_time = time.monotonic()
+                response = network.fetch_data("https://www.timeapi.io/api/timezone/coordinate?latitude={lat}&longitude={lng}".format(lat=zone_info[idx].latitude, lng=zone_info[idx].longitude))
+                print("-" * 40)
+                print("response in {sec}".format(sec=time.monotonic() - start_time))
+                print(response)
+                print("-" * 40)
 
-                    print("{name} ({abbr}): {offset} s".format(name=zone_info[idx].tz_name, abbr=zone_info[idx].tz_abbr, offset=zone_info[idx].utc_offset_sec))
+                response = json.loads(response)
+                print(idx)
+                print(response["currentUtcOffset"]["seconds"])
+                zone_info[idx].utc_offset_sec = int(response["currentUtcOffset"]["seconds"])
+                zone_info[idx].tz_name = response["timeZone"]
 
-                    # Get the almanac (sunrise/sunset) data
-                    clock_lines[1].zone_label.text = "alm"
-                    start_time = time.monotonic()
-                    response = network.fetch_data("https://api.sunrise-sunset.org/json?formatted=0&lat={lat}&lng={lng}".format(lat=zone_info[idx].latitude, lng=zone_info[idx].longitude))
-                    zone_info[idx].almanac = json.loads(response)["results"]
+                print("{name} ({abbr}): {offset} s".format(name=zone_info[idx].tz_name, abbr=zone_info[idx].tz_abbr, offset=zone_info[idx].utc_offset_sec))
 
-                    zone_info[idx].sunrise = parse_time(zone_info[idx].almanac["sunrise"])
-                    zone_info[idx].sunset = parse_time(zone_info[idx].almanac["sunset"])
+                # Get the almanac (sunrise/sunset) data
+                clock_lines[1].zone_label.text = "alm"
+                start_time = time.monotonic()
+                response = network.fetch_data("https://api.sunrise-sunset.org/json?formatted=0&lat={lat}&lng={lng}".format(lat=zone_info[idx].latitude, lng=zone_info[idx].longitude))
+                zone_info[idx].almanac = json.loads(response)["results"]
 
-                    print("-" * 40)
-                    print("response in {sec}".format(sec=time.monotonic() - start_time))
-                    print(response)
-                    print("-" * 40)
+                zone_info[idx].sunrise = parse_time(zone_info[idx].almanac["sunrise"])
+                zone_info[idx].sunset = parse_time(zone_info[idx].almanac["sunset"])
 
-            print("fetch time")
-            TIME_URL = "https://www.yeazel2.net/api/v1/util/gettime/Central%20Standard%20Time,W.%20Europe%20Standard%20Time"
-            TIME_URL = "https://yeazel2.net/"
-
-            clock_lines[1].zone_label.text = "ntp"
-            response = network.fetch(TIME_URL, timeout=20)
-            print("-" * 40)
-            print(response)
-            print("-" * 40)
-            # https://www.yeazel2.net/api/v1/util/gettime/Central%20Standard%20Time,W.%20Europe%20Standard%20Time
-            # capture time.monotonic() when response received
-            # json.loads(response)
-            # current time = server value + (time.monotonic() - last_check)
+                print("-" * 40)
+                print("response in {sec}".format(sec=time.monotonic() - start_time))
+                print(response)
+                print("-" * 40)
 
             clock_lines[1].zone_label.text = ":-)"
             next_check = time.monotonic() + 60 * 60
@@ -287,7 +278,6 @@ while True:
             print(e)
             print("An error occured, will retry")
             next_check = time.monotonic() + 10 * 60
-            clock_lines[1].zone_label.text = zone_info[1].tz_abbr
 
         status_label.text = ""
         clock_lines[1].zone_label.color = 0x0000FF
