@@ -27,8 +27,15 @@ next_update = 0
 
 class ZoneInfo():
     def __init__(self):
-        tz_name = ""
-        tz_abbr = ""
+        self.tz_name = ""
+        self.tz_abbr = ""
+
+class ClockLine():
+    def __init__(self, clock_font):
+        self.clock_label = Label(clock_font)
+        self.zone_label = Label(terminalio.FONT)
+
+clock_lines = []
 
 zone_info = []
 zone_info.append(ZoneInfo())
@@ -77,41 +84,35 @@ if not DEBUG:
 else:
     font = terminalio.FONT
 
-clock_label = {}
-clock_label[0] = Label(font)
-clock_label[1] = Label(font)
+clock_lines = [ ClockLine(font), ClockLine(font) ]
 
 tz_label = {}
-for idx in range(len(clock_label)):
-    clock_label[idx].x = 0
-    clock_label[idx].y = 8 + ((display.height // 2) + 1) * idx
-    group.append(clock_label[idx])
+for idx in range(len(clock_lines)):
+    clock_lines[idx].clock_label.x = 0
+    clock_lines[idx].clock_label.y = 8 + ((display.height // 2) + 1) * idx
+    group.append(clock_lines[idx].clock_label)
 
-    tz_label[idx] = Label(terminalio.FONT)
-    tz_label[idx].x = 46
-    tz_label[idx].y = 7 + ((display.height // 2) + 1) * idx
-    tz_label[idx].color = 0x0000FF
-    group.append(tz_label[idx])
+    clock_lines[idx].zone_label.x = 46
+    clock_lines[idx].zone_label.y = 7 + ((display.height // 2) + 1) * idx
+    clock_lines[idx].zone_label.color = 0x0000FF
+    group.append(clock_lines[idx].zone_label)
 
-tz_label[0].text = zone_info[0].tz_abbr
-tz_label[1].text = zone_info[1].tz_abbr
+    clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
 
 status_label = Label(terminalio.FONT)
 status_label.x = 0
-status_label.y = tz_label[1].y
+status_label.y = clock_lines[1].zone_label.y
 group.append(status_label)
 
 def update_time(*, index=0, hours=None, minutes=None, show_colon=False):
-    print("Displaying {name} ({abbr}): {offset} s".format(name=zone_info[idx].tz_name, abbr=zone_info[idx].tz_abbr, offset=zone_info[idx].utc_offset_sec))
-
     now = time.localtime(time.mktime(time.localtime()) + zone_info[index].utc_offset_sec)
 
     if hours is None:
         hours = now[3]
     if hours >= 18 or hours < 6:  # evening hours to morning
-        clock_label[index].color = color[1]
+        clock_lines[index].clock_label.color = color[1]
     else:
-        clock_label[index].color = color[3]  # daylight hours
+        clock_lines[index].clock_label.color = color[3]  # daylight hours
 
     if SHOW_AM_PM:
         if hours > 12:  # Handle times later than 12:59
@@ -132,14 +133,14 @@ def update_time(*, index=0, hours=None, minutes=None, show_colon=False):
     else:
         colon = ":"
 
-    clock_label[index].text = "{hours}{colon}{minutes:02d}".format(
+    clock_lines[index].clock_label.text = "{hours}{colon}{minutes:02d}".format(
         hours=hours, minutes=minutes, colon=colon
     )
-    bbx, bby, bbwidth, bbh = clock_label[index].bounding_box
+    bbx, bby, bbwidth, bbh = clock_lines[index].clock_label.bounding_box
 
     if DEBUG:
         print("Label bounding box: {},{},{},{}".format(bbx, bby, bbwidth, bbh))
-        print("Label x: {} y: {}".format(clock_label[index].x, clock_label[index].y))
+        print("Label x: {} y: {}".format(clock_lines[index].clock_label.x, clock_lines[index].clock_label.y))
 
 next_check = 0
 
@@ -148,7 +149,7 @@ rect = Rect(0, (display.height // 2) - 1, display.width, 1, fill=0x000055)
 group.append(rect)
 
 update_time(show_colon=True)  # Display whatever time is on the board
-clock_label[1].text = "  :  "
+clock_lines[idx].clock_label.text = "  :  "
 
 while True:
     if next_check <= time.monotonic():
@@ -161,11 +162,11 @@ while True:
 
 	        # reference: https://docs.circuitpython.org/projects/portalbase/en/latest/api.html#adafruit_portalbase.network.NetworkBase
 
-            tz_label[1].color = 0xFF0000
+            clock_lines[1].zone_label.color = 0xFF0000
 
             if not network.is_connected:
                 print("connecting")
-                tz_label[1].text = "net"
+                clock_lines[1].zone_label.text = "net"
                 network.connect()
 
                 # Synchronize Board's clock to Internet
@@ -191,7 +192,7 @@ while True:
                     print("{name} ({abbr}): {offset} s".format(name=zone_info[idx].tz_name, abbr=zone_info[idx].tz_abbr, offset=zone_info[idx].utc_offset_sec))
 
                 print("fetch test")
-                tz_label[1].text = "api"
+                clock_lines[1].zone_label.text = "api"
                 start_time = time.monotonic()
                 response = network.fetch_data("https://api.sunrise-sunset.org/json?lat=36.7201600&lng=-4.4203400")
                 print("-" * 40)
@@ -203,7 +204,7 @@ while True:
             TIME_URL = "https://www.yeazel2.net/api/v1/util/gettime/Central%20Standard%20Time,W.%20Europe%20Standard%20Time"
             TIME_URL = "https://yeazel2.net/"
 
-            tz_label[1].text = "ntp"
+            clock_lines[1].zone_label.text = "ntp"
             response = network.fetch(TIME_URL, timeout=20)
             print("-" * 40)
             print(response)
@@ -213,31 +214,31 @@ while True:
             # json.loads(response)
             # current time = server value + (time.monotonic() - last_check)
 
-            tz_label[1].text = ":-)"
+            clock_lines[1].zone_label.text = ":-)"
             next_check = time.monotonic() + 60 * 60
         except BrokenPipeError as e:
             print("BrokenPipeError")
             print(e)
-            tz_label[1].text = "bpe"
+            clock_lines[1].zone_label.text = "bpe"
 
         except ConnectionError as e:
             print("ConnectionError")
             print(e)
-            tz_label[1].text = "c.e"
+            clock_lines[1].zone_label.text = "c.e"
 
         except OSError as e:
             print("OSError")
             print(e)
-            tz_label[1].text = "ose"
+            clock_lines[1].zone_label.text = "ose"
 
         except RuntimeError as e:
             print(e)
             print("An error occured, will retry")
             next_check = time.monotonic() + 10 * 60
-            tz_label[1].text = zone_info[1].tz_abbr
+            clock_lines[1].zone_label.text = zone_info[1].tz_abbr
 
         status_label.text = ""
-        tz_label[1].color = 0x0000FF
+        clock_lines[1].zone_label.color = 0x0000FF
 
     if next_update < time.monotonic():
         next_update = time.monotonic() + 1
