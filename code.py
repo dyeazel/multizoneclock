@@ -5,6 +5,9 @@
 # Big Board
 # Runs on Airlift Metro M4 with 64x32 RGB Matrix display & shield
 
+# general reference: https://learn.adafruit.com/adafruit-matrixportal-m4/matrixportal-library-overview
+
+
 import time
 import board
 import busio
@@ -21,6 +24,8 @@ BLINK = True
 DEBUG = False
 SHOW_AM_PM = False
 next_update = 0
+utc_offset_sec = [ 0.0, 0.0 ]
+tz_abbr = [ "CST", "CET" ]
 
 # Get wifi details and more from a secrets.py file
 try:
@@ -62,17 +67,18 @@ clock_label[1] = Label(font)
 
 tz_label = {}
 for idx in range(len(clock_label)):
-    clock_label[idx].x = 1 #round(display.width / 2 - bbwidth / 2)
+    clock_label[idx].x = 0
     clock_label[idx].y = 8 + ((display.height // 2) + 1) * idx
     group.append(clock_label[idx])
 
     tz_label[idx] = Label(terminalio.FONT)
-    tz_label[idx].x = 43
+    tz_label[idx].x = 46
     tz_label[idx].y = 7 + ((display.height // 2) + 1) * idx
+    tz_label[idx].color = 0x0000FF
     group.append(tz_label[idx])
 
-tz_label[0].text = "LCL"
-tz_label[1].text = "???"
+tz_label[0].text = tz_abbr[0]
+tz_label[1].text = tz_abbr[1]
 
 status_label = Label(terminalio.FONT)
 status_label.x = 0
@@ -80,7 +86,8 @@ status_label.y = tz_label[1].y
 group.append(status_label)
 
 def update_time(*, index=0, hours=None, minutes=None, show_colon=False):
-    now = time.localtime()  # Get the time values we need
+    now = time.localtime(time.mktime(time.localtime()) + utc_offset_sec[index])
+
     if hours is None:
         hours = now[3]
     if hours >= 18 or hours < 6:  # evening hours to morning
@@ -119,10 +126,11 @@ def update_time(*, index=0, hours=None, minutes=None, show_colon=False):
 next_check = 0
 
 # shapes: https://learn.adafruit.com/circuitpython-display-support-using-displayio/ui-quickstart
-rect = Rect(0, (display.height // 2) - 1, display.width, 2, fill=0xBBBBBB)
+rect = Rect(0, (display.height // 2) - 1, display.width, 1, fill=0x000055)
 group.append(rect)
 
 update_time(show_colon=True)  # Display whatever time is on the board
+clock_label[1].text = "  :  "
 
 while True:
     if next_check <= time.monotonic():
@@ -135,19 +143,48 @@ while True:
 
 	        # reference: https://docs.circuitpython.org/projects/portalbase/en/latest/api.html#adafruit_portalbase.network.NetworkBase
 
-            clock_label[1].text = ""
+            tz_label[1].color = 0xFF0000
 
             if not network.is_connected:
                 print("connecting")
-                status_label.text = "net"
+                tz_label[1].text = "net"
                 network.connect()
 
-                network.get_local_time()  # Synchronize Board's clock to Internet
+                # Synchronize Board's clock to Internet
+                network.get_local_time("America/Chicago")
+                # Subtract from monotonic to get an offset from a reference point.
+                utc_offset_sec[0] = time.time() - time.monotonic()
+
+                network.get_local_time("Europe/Madrid")
+                # Subtract from monotonic to get an offset from a reference point.
+                utc_offset_sec[1] = time.time() - time.monotonic()
+
+                # get UTC time
+                network.get_local_time("Etc/UTC")
+                # Subtract from monotonic to get an offset from a reference point.
+                offset_utc = time.time() - time.monotonic()
+
+                for idx in range(len(utc_offset_sec)):
+                    # Subtract from UTC's offset from its reference.
+                    utc_offset_sec[idx] -= offset_utc
+                    # Round to the nearest hour.
+                    # Need to convert to int here (even with the rounding) or the minutes and seconds won't match exactly.
+                    # NOTE: This will cause problems for the few timezones that don't have an even number of hours.
+                    utc_offset_sec[idx] = int(round(utc_offset_sec[idx] / 60 / 60, 0) * 60 * 60)
+
+                offset_utc -= offset_utc
+
+                # utc_offset_sec[0] = -6 * 60 * 60
+                # utc_offset_sec[1] = 60 * 60
+
+                print("offsets: {local}, {other}, {utc}".format(local=utc_offset_sec[0], other=utc_offset_sec[1], utc=offset_utc))
 
                 print("fetch test")
-                status_label.text = "test"
+                tz_label[1].text = "api"
+                start_time = time.monotonic()
                 response = network.fetch_data("https://api.sunrise-sunset.org/json?lat=36.7201600&lng=-4.4203400")
                 print("-" * 40)
+                print("response in {sec}".format(sec=time.monotonic() - start_time))
                 print(response)
                 print("-" * 40)
 
@@ -155,8 +192,8 @@ while True:
             TIME_URL = "https://www.yeazel2.net/api/v1/util/gettime/Central%20Standard%20Time,W.%20Europe%20Standard%20Time"
             TIME_URL = "https://yeazel2.net/"
 
-            status_label.text = "time"
-            response = network.fetch(TIME_URL, timeout = 5)
+            tz_label[1].text = "ntp"
+            response = network.fetch(TIME_URL, timeout=20)
             print("-" * 40)
             print(response)
             print("-" * 40)
@@ -165,18 +202,31 @@ while True:
             # json.loads(response)
             # current time = server value + (time.monotonic() - last_check)
 
+            tz_label[1].text = ":-)"
             next_check = time.monotonic() + 60 * 60
         except BrokenPipeError as e:
             print("BrokenPipeError")
             print(e)
-            raise
+            tz_label[1].text = "bpe"
+
+        except ConnectionError as e:
+            print("ConnectionError")
+            print(e)
+            tz_label[1].text = "c.e"
+
+        except OSError as e:
+            print("OSError")
+            print(e)
+            tz_label[1].text = "ose"
 
         except RuntimeError as e:
-            print("Some error occured, retrying!")
             print(e)
-            next_check = time.monotonic() + 5
+            print("An error occured, will retry")
+            next_check = time.monotonic() + 10 * 60
+            tz_label[1].text = tz_abbr[1]
 
         status_label.text = ""
+        tz_label[1].color = 0x0000FF
 
     if next_update < time.monotonic():
         next_update = time.monotonic() + 1
