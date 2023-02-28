@@ -24,6 +24,8 @@ import adafruit_requests as requests
 BLINK = True
 DEBUG = False
 SHOW_AM_PM = False
+FEED_LOG = "big-board.big-board-log"
+FEED_DRIFT = "big-board.big-board-drift"
 next_update = 0
 next_time_update = 0
 
@@ -233,19 +235,25 @@ while True:
 
             if next_time_update < time.mktime(time.localtime()):
                 msg = "Updating clock from {time}".format(time=format_time(time.localtime()))
-                network.push_to_io("big-board-log", msg)
+                network.push_to_io(FEED_LOG, msg)
                 log(msg)
 
+                delta_old = time.mktime(time.localtime()) - time.monotonic()
                 # Get UTC time. All future use of time will be relative to UTC.
                 network.get_local_time("Etc/UTC")
+                delta_new = time.mktime(time.localtime()) - time.monotonic()
                 # Check time again in an hour
                 next_time_update = time.mktime(time.localtime()) + 60 * 60
+
+                drift = delta_new - delta_old
+                network.push_to_io(FEED_LOG, "Clock drift {drift}".format(drift=drift))
+                network.push_to_io(FEED_DRIFT, drift)
 
                 log("next clock update at {nextcheck}".format(nextcheck=format_time(time.localtime(next_time_update))))
 
             for idx in range(len(zone_info)):
                 if zone_info[idx].next_check < time.monotonic():
-                    network.push_to_io("big-board-log",
+                    network.push_to_io(FEED_LOG,
                         "getting timezone {zone} info".format(zone=idx))
 
                     log("getting timezone {zone} info".format(zone=idx))
