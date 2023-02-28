@@ -212,10 +212,6 @@ while True:
     # Get the earliest next check.
     next_check = next_time_update
     for idx in range(len(zone_info)):
-        # next_check is time.monotonic
-        # zone.next_check is seconds after 1/1/1970.
-        # Calculate how many seconds after the current time is and add to
-        # time.monotonic to see if it's in the future or past.
         next_check = min(next_check, zone_info[idx].next_check)
 
     if next_check <= time.mktime(time.localtime()):
@@ -236,7 +232,10 @@ while True:
                 network.connect(2)
 
             if next_time_update < time.mktime(time.localtime()):
-                log("Updating clock")
+                msg = "Updating clock from {time}".format(time=format_time(time.localtime()))
+                network.push_to_io("big-board-log", msg)
+                log(msg)
+
                 # Get UTC time. All future use of time will be relative to UTC.
                 network.get_local_time("Etc/UTC")
                 # Check time again in an hour
@@ -246,6 +245,9 @@ while True:
 
             for idx in range(len(zone_info)):
                 if zone_info[idx].next_check < time.monotonic():
+                    network.push_to_io("big-board-log",
+                        "getting timezone {zone} info".format(zone=idx))
+
                     log("getting timezone {zone} info".format(zone=idx))
 
                     # Get the time zone data
