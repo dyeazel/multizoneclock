@@ -130,7 +130,7 @@ display.show(group)
 
 # Fonts: https://learn.adafruit.com/custom-fonts-for-pyportal-circuitpython-display
 if not DEBUG:
-    font = bitmap_font.load_font("font/Monaco-numbers-14.bdf")
+    font = bitmap_font.load_font("font/mono-numbers-14.bdf")
 else:
     font = terminalio.FONT
 
