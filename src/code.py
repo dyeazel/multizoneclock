@@ -26,13 +26,12 @@ import adafruit_requests as requests
 # ------------------------------------------------------------------------------------
 
 class ZoneInfo():
-    def __init__(self):
+    def __init__(self, config):
         self.utc_offset_sec = 0
         self.is_utc = False
-        self.tz_name = ""
-        self.tz_abbr = ""
-        self.latitude = 0.0
-        self.longitude = 0.0
+        self.tz_abbr = config["tz_abbr"]
+        self.latitude = config["latitude"]
+        self.longitude = config["longitude"]
         self.sunrise = 0
         self.sunset = 0
         self.dst_start = 0
@@ -61,7 +60,6 @@ WARN_MINUTES = 55
 # ------------------------------------------------------------------------------------
 # --    Module Level Variables
 # ------------------------------------------------------------------------------------
-
 next_update = 0
 next_time_update = 0
 # Start this at zero. It will be incremented before the first read.
@@ -69,36 +67,13 @@ aux_zone_index = 0
 next_aux_zone_time = 0
 clock_lines = []
 zone_info = []
-
 # ------------------------------------------------------------------------------------
 
-zone_info.append(ZoneInfo())
-zone_info[0].tz_name = "America/Chicago"
-zone_info[0].tz_abbr = "MSN"
-# Madison
-zone_info[0].latitude = 43.073051
-zone_info[0].longitude = -89.401230
-
-zone_info.append(ZoneInfo())
-zone_info[1].tz_name = "America/San Francisco"
-zone_info[1].tz_abbr = "Cali"
-# St. George
-zone_info[1].latitude = 38.533958
-zone_info[1].longitude = -121.744560
-
-zone_info.append(ZoneInfo())
-zone_info[2].tz_name = "America/Denver"
-zone_info[2].tz_abbr = "Utah"
-# St. George
-zone_info[2].latitude = 37.108280
-zone_info[2].longitude = -113.583282
-
-zone_info.append(ZoneInfo())
-zone_info[3].tz_name = "Europe/Madrid"
-zone_info[3].tz_abbr = "CET"
-# Algorta
-zone_info[3].latitude = 43.348680
-zone_info[3].longitude = -3.010120
+from locations import locations
+print("found {} locations:".format(len(locations)))
+for idx in range(len(locations)):
+    print(locations[idx]["tz_abbr"])
+    zone_info.append(ZoneInfo(locations[idx]))
 
 # Get wifi details and more from a secrets.py file
 try:
@@ -106,8 +81,6 @@ try:
 except ImportError:
     print("WiFi secrets are kept in secrets.py, please add them there!")
     raise
-print("    Big Board")
-print("Time will be set for {}".format(secrets["timezone"]))
 
 # --- Display setup ---
 matrix = Matrix()
@@ -136,28 +109,37 @@ else:
 
 clock_lines = [ ClockLine(font), ClockLine(font) ]
 
-tz_label = {}
 for idx in range(len(clock_lines)):
+    top = 8 + ((display.height // 2) + 1) * idx
+
     clock_lines[idx].clock_label.x = 0
-    clock_lines[idx].clock_label.y = 8 + ((display.height // 2) + 1) * idx
+    clock_lines[idx].clock_label.y = top
     group.append(clock_lines[idx].clock_label)
 
     clock_lines[idx].zone_label.x = 41
-    clock_lines[idx].zone_label.y = 7 + ((display.height // 2) + 1) * idx
-    clock_lines[idx].zone_label.color = 0x0000FF
+    clock_lines[idx].zone_label.y = top - 1
     group.append(clock_lines[idx].zone_label)
 
+    clock_lines[idx].zone_label.color = 0x0000FF
     clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
 
-status_label = Label(terminalio.FONT)
-status_label.x = 0
-status_label.y = clock_lines[1].zone_label.y
-group.append(status_label)
+# Solid blue line separating the two times.
+rect = Rect(0, (display.height // 2) - 1, display.width, 1, fill=0x000055)
+group.append(rect)
+# Cyan bar to show the seconds.
+seconds_rect = Rect(0, (display.height // 2), 5, 1, fill=0x005555)
+group.append(seconds_rect)
+# Red box within 5 minutes of the hour.
+warn_rect = Rect(display.width, (display.height // 2) - 1 - 3, 5, 3, fill=0x550000)
+group.append(warn_rect)
 
 
+# Adds a specified number of seconds to a time_tuple
 def add_seconds(value, seconds):
     return time.localtime(time.mktime(value) + seconds)
 
+
+# Formats a time_tuple as a string.
 def format_time(value):
     return "{year}-{month:02d}-{day:02d} {hours}:{minutes:02d}:{seconds:02d}".format(year=value[0], month=value[1], day=value[2], hours=value[3], minutes=value[4], seconds=value[5])
 
@@ -166,21 +148,16 @@ def log(message):
     print("{time}: {msg}".format(time=format_time(time.localtime()), msg=message))
 
 
+# Converts an ISO formatted date/time string like 2023-02-17T14:35:27 to a time in seconds.
 def parse_time(value):
     result = 0
 
     m = re.search("(\d*)-(\d*)-(\d*)T(\d*):(\d*):(\d*)", value)
     if m:
         t = (
-            int(m.group(1)),
-            int(m.group(2)),
-            int(m.group(3)),
-            int(m.group(4)),
-            int(m.group(5)),
-            int(m.group(6)),
-            -1,
-            -1,
-            -1,
+            int(m.group(1)), int(m.group(2)), int(m.group(3)),
+            int(m.group(4)), int(m.group(5)), int(m.group(6)),
+            -1, -1, -1,
         )
 
         result = time.mktime(t)
@@ -188,61 +165,72 @@ def parse_time(value):
     return result
 
 
+# Shows a short status message in red in the time zone name area.
 def set_status(message):
     clock_lines[1].zone_label.color = 0xFF0000
     clock_lines[1].zone_label.text = message
 
 
+# Updates the UTC offset, DST start and end, and sunrise/sunset for a location.
+# zone: the ZoneInfo to display.
+# idx:  the line number where zone will be displayed.
 def update_time_zone(zone, idx):
     if zone.next_check < time.mktime(time.localtime()):
+        # Time to refresh the zone info.
+
         if not network.is_connected:
+            # Need a connection to update the information.
             log("connecting")
             set_status("net")
             network.connect(2)
 
+        # ------------------------------------------------------------
+        # --    Time zone info from lat/long.
+        # ------------------------------------------------------------
+        log("getting timezone {zone} info".format(zone=zone.tz_abbr))
+        set_status("api")
         network.push_to_io(FEED_LOG,
-            "getting timezone {zone} info".format(zone=idx))
-
-        #log("getting timezone {zone} info".format(zone=idx))
-
+            "getting timezone {zone} info".format(zone=zone.tz_abbr))
         # Get the time zone data
         set_status("TZ{idx}".format(idx=idx))
         start_time = time.monotonic()
         response = network.fetch_data("https://www.timeapi.io/api/timezone/coordinate?latitude={lat}&longitude={lng}".format(lat=zone.latitude, lng=zone.longitude))
-        #print("-" * 40)
         print("response in {sec}".format(sec=time.monotonic() - start_time))
-        #print(response)
-        #print("-" * 40)
 
+        # Parse the JSON response into a dictionary.
         response = json.loads(response)
         zone.utc_offset_sec = int(response["currentUtcOffset"]["seconds"])
         zone.tz_name = response["timeZone"]
+        # Get the DST start and end in UTC, in seconds.
         zone.dst_start = parse_time(response["dstInterval"]["dstStart"])
         zone.dst_end = parse_time(response["dstInterval"]["dstEnd"])
+        # ------------------------------------------------------------
 
-        #print("{name} ({abbr}): {offset} s".format(name=zone.tz_name, abbr=zone.tz_abbr, offset=zone.utc_offset_sec))
-
+        # ------------------------------------------------------------
+        # Get the almanac (sunrise/sunset) info.
+        # ------------------------------------------------------------
         log("getting almanac {zone} info".format(zone=idx))
         # Get the almanac (sunrise/sunset) data
         set_status("ss{idx}".format(idx=idx))
         start_time = time.monotonic()
         response = network.fetch_data("https://api.sunrise-sunset.org/json?formatted=0&lat={lat}&lng={lng}".format(lat=zone.latitude, lng=zone.longitude))
+        print("response in {sec}".format(sec=time.monotonic() - start_time))
+        # Parse the JSON response into a dictionary.
         zone.almanac = json.loads(response)["results"]
-
+        # Get the sunrise and sunset in UTC, in seconds.
         zone.sunrise = parse_time(zone.almanac["sunrise"])
         zone.sunset = parse_time(zone.almanac["sunset"])
+        # ------------------------------------------------------------
 
-        #print("-" * 40)
-        print("response in {sec}".format(sec=time.monotonic() - start_time))
-        #print(response)
-        #print("-" * 40)
-
-        # Check again an hour after sunset and DST changes to get the
+        # Check again a minute after sunset and DST changes to get the
         # sunrise/sunset for the next day and new DST values.
-        # Note that sunrise doesn't appear to update until after sunset has passed.
-        zone.next_check = min(zone.sunset, zone.dst_start, zone.dst_end) + 60 * 60
-
-        # Sunrise sometimes is before now, so move it to the future.
+        # NOTES
+        #   1) sunrise doesn't appear to update until after sunset has passed.
+        #   2) we don't use dst_start and dst_end to change the UTC offset. They're
+        #       just used to determine when to call the API again. So if DST ends,
+        #       we'll call the API a minute after and it will return the new UTC offset.
+        zone.next_check = min(zone.sunset, zone.dst_start, zone.dst_end) + 60
+        # In case something weird happens, make sure we don't update too soon.
         if zone.next_check < now_s:
             zone.next_check = now_s + 60 * 60 * 1
 
@@ -258,12 +246,17 @@ def update_time_zone(zone, idx):
             "zone {zone} almanac: {almanac}".format(zone=idx, almanac=s))
 
 
+# Updates the time displayed
 def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=False):
+    # Current UTC time from our clock, in seconds.
     now_utc_s = time.mktime(time.localtime())
+    # Current time in zone, in seconds.
     now_s = now_utc_s + zone.utc_offset_sec
+    # Current time in zone, in time_tuple.
     now = time.localtime(now_s)
 
     if now_s < 86400:
+        # Should only get this before the RTC has been set.
         clock_lines[index].zone_label.text = "???"
     elif int(round(zone.utc_offset_sec, 0)) == 0:
         clock_lines[index].zone_label.text = "UTC"
@@ -274,13 +267,14 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
         hours = now[3]
 
     if zone.sunrise == zone.sunset:
+        # No almanac informat yet. Show in red.
         clock_lines[index].clock_label.color = color[2]
     elif (zone.sunrise < now_utc_s) and (now_utc_s < zone.sunset):
         # sunrise/sunset stored in UTC
-        # daylight
+        # daylight = green
         clock_lines[index].clock_label.color = color[3]
     else:
-        # night
+        # night = red
         clock_lines[index].clock_label.color = color[1]
 
     if SHOW_AM_PM:
@@ -290,6 +284,7 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
             hours = 12
 
     if hours < 10:
+        # Pad with a space
         hours = " {hours}".format(hours=hours)
     else:
         hours = "{hours}".format(hours=hours)
@@ -298,6 +293,7 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
         minutes = now[4]
 
     if BLINK:
+        # Colon on for even seconds.
         colon = ":" if show_colon or now[5] % 2 else " "
     else:
         colon = ":"
@@ -305,8 +301,8 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
     clock_lines[index].clock_label.text = "{hours}{colon}{minutes:02d}".format(
         hours=hours, minutes=minutes, colon=colon
     )
-    bbx, bby, bbwidth, bbh = clock_lines[index].clock_label.bounding_box
 
+    # This is a red rectangle that shows within five minutes of the hour.
     global warn_rect
     if minutes >= WARN_MINUTES:
         warn_rect.x = display.width - (60 - minutes) * warn_rect.width
@@ -314,25 +310,18 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
         # Shove it off the right of the display.
         warn_rect.x = display.width
 
+    # Move the seconds indicator each time.
     global seconds_rect
     seconds_rect.x = now[5]
 
+    # Bounding box for the clock text, of you need it.
+    bbx, bby, bbwidth, bbh = clock_lines[index].clock_label.bounding_box
     if DEBUG:
         print("Label bounding box: {},{},{},{}".format(bbx, bby, bbwidth, bbh))
         print("Label x: {} y: {}".format(clock_lines[index].clock_label.x, clock_lines[index].clock_label.y))
 
-# shapes: https://learn.adafruit.com/circuitpython-display-support-using-displayio/ui-quickstart
-rect = Rect(0, (display.height // 2) - 1, display.width, 1, fill=0x000055)
-group.append(rect)
-# Yellow dot to show the seconds.
-seconds_rect = Rect(0, (display.height // 2), 5, 1, fill=0x005555)
-group.append(seconds_rect)
-# Red box within 5 minutes of the hour.
-warn_rect = Rect(display.width, (display.height // 2) - 1 - 3, 5, 3, fill=0x550000)
-group.append(warn_rect)
-
 update_time(zone=zone_info[0], show_colon=True)  # Display whatever time is on the board
-clock_lines[idx].clock_label.text = "  :  "
+clock_lines[1].clock_label.text = "  :  "
 
 while True:
     # Get the earliest next check.
@@ -347,12 +336,6 @@ while True:
                 show_colon=True
             )  # Make sure a colon is displayed while updating
 
-	        # reference: https://docs.circuitpython.org/projects/matrixportal/en/latest/api.html#adafruit_matrixportal.network.Network
-
-	        # reference: https://docs.circuitpython.org/projects/portalbase/en/latest/api.html#adafruit_portalbase.network.NetworkBase
-
-            #log("{nextcheck}, {time}".format(nextcheck=next_check, time = time.mktime(time.localtime())))
-
             if not network.is_connected:
                 log("connecting")
                 set_status("net")
@@ -360,20 +343,13 @@ while True:
 
             if next_time_update < now_s:
                 msg = "Updating clock from {time}".format(time=format_time(time.localtime()))
+                set_status("api")
                 network.push_to_io(FEED_LOG, msg)
                 log(msg)
                 set_status("RTC")
-
-                delta_old = time.mktime(time.localtime()) - time.monotonic()
-                # Get UTC time. All future use of time will be relative to UTC.
                 network.get_local_time("Etc/UTC")
-                delta_new = time.mktime(time.localtime()) - time.monotonic()
                 # Check time again in an hour
                 next_time_update = time.mktime(time.localtime()) + 60 * 60
-
-                drift = delta_new - delta_old
-                network.push_to_io(FEED_LOG, "Clock drift {drift}".format(drift=drift))
-                network.push_to_io(FEED_DRIFT, drift)
 
                 log("next clock update at {nextcheck}".format(nextcheck=format_time(time.localtime(next_time_update))))
 
@@ -412,12 +388,14 @@ while True:
         print("An error occured, will retry")
         next_check = time.monotonic() + 10 * 60
 
-    status_label.text = ""
     clock_lines[1].zone_label.color = 0x0000FF
 
     if next_update < time.monotonic():
+        # Only update the display once per second.
         next_update = time.monotonic() + 1
+        # Always update the first line with zone_info[0]
         update_time(zone=zone_info[0])
+        # Update the second line with the current auxilliary zone.
         update_time(zone=zone_info[aux_zone_index], index = 1)
 
     # Short nap to save power
