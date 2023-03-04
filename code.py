@@ -419,3 +419,6 @@ while True:
         next_update = time.monotonic() + 1
         update_time(zone=zone_info[0])
         update_time(zone=zone_info[aux_zone_index], index = 1)
+
+    # Short nap to save power
+    time.sleep(0.1)
