@@ -307,6 +307,13 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
     )
     bbx, bby, bbwidth, bbh = clock_lines[index].clock_label.bounding_box
 
+    global warn_rect
+    if minutes >= WARN_MINUTES:
+        warn_rect.x = display.width - (60 - minutes) * warn_rect.width
+    else:
+        # Shove it off the right of the display.
+        warn_rect.x = display.width
+
     global seconds_rect
     seconds_rect.x = now[5]
 
@@ -320,6 +327,9 @@ group.append(rect)
 # Yellow dot to show the seconds.
 seconds_rect = Rect(0, (display.height // 2), 5, 1, fill=0x005555)
 group.append(seconds_rect)
+# Red box within 5 minutes of the hour.
+warn_rect = Rect(display.width, (display.height // 2) - 1 - 3, 5, 3, fill=0x550000)
+group.append(warn_rect)
 
 update_time(zone=zone_info[0], show_colon=True)  # Display whatever time is on the board
 clock_lines[idx].clock_label.text = "  :  "
