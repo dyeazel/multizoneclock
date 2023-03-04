@@ -21,18 +21,9 @@ from adafruit_matrixportal.network import Network
 from adafruit_matrixportal.matrix import Matrix
 import adafruit_requests as requests
 
-BLINK = True
-DEBUG = False
-SHOW_AM_PM = False
-FEED_LOG = "big-board.big-board-log"
-FEED_DRIFT = "big-board.big-board-drift"
-AUX_ZONE_TIME_S = 5
-next_update = 0
-next_time_update = 0
-# Start this at zero. It will be incremented before the first read. 
-aux_zone_index = 0
-next_aux_zone_time = 0
-
+# ------------------------------------------------------------------------------------
+# --    Classes
+# ------------------------------------------------------------------------------------
 
 class ZoneInfo():
     def __init__(self):
@@ -53,9 +44,34 @@ class ClockLine():
         self.clock_label = Label(clock_font)
         self.zone_label = Label(terminalio.FONT)
 
-clock_lines = []
+# ------------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------------
+# --    Constants
+# ------------------------------------------------------------------------------------
+BLINK = True
+DEBUG = False
+SHOW_AM_PM = False
+FEED_LOG = "big-board.big-board-log"
+FEED_DRIFT = "big-board.big-board-drift"
+AUX_ZONE_TIME_S = 5
+WARN_MINUTES = 55
+# ------------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------------
+# --    Module Level Variables
+# ------------------------------------------------------------------------------------
+
+next_update = 0
+next_time_update = 0
+# Start this at zero. It will be incremented before the first read.
+aux_zone_index = 0
+next_aux_zone_time = 0
+clock_lines = []
 zone_info = []
+
+# ------------------------------------------------------------------------------------
+
 zone_info.append(ZoneInfo())
 zone_info[0].tz_name = "America/Chicago"
 zone_info[0].tz_abbr = "MSN"
