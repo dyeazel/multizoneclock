@@ -130,7 +130,7 @@ group.append(rect)
 seconds_rect = Rect(0, (display.height // 2), 5, 1, fill=0x005555)
 group.append(seconds_rect)
 # Red box within 5 minutes of the hour.
-warn_rect = Rect(display.width, (display.height // 2) - 1 - 3, 5, 3, fill=0x550000)
+warn_rect = Rect(display.width, (display.height // 2) - 1 - 3, 25, 3, fill=0x550000)
 group.append(warn_rect)
 
 
@@ -305,7 +305,7 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
     # This is a red rectangle that shows within five minutes of the hour.
     global warn_rect
     if minutes >= WARN_MINUTES:
-        warn_rect.x = display.width - (60 - minutes) * warn_rect.width
+        warn_rect.x = display.width - (60 - minutes) * 5
     else:
         # Shove it off the right of the display.
         warn_rect.x = display.width
