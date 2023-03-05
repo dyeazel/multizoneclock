@@ -255,7 +255,7 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
     # Current time in zone, in time_tuple.
     now = time.localtime(now_s)
 
-    if now_s < 86400:
+    if now[0] == 2000:
         # Should only get this before the RTC has been set.
         clock_lines[index].zone_label.text = "???"
     elif int(round(zone.utc_offset_sec, 0)) == 0:
