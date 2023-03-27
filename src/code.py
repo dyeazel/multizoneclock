@@ -347,11 +347,24 @@ while True:
                 network.push_to_io(FEED_LOG, msg)
                 log(msg)
                 set_status("RTC")
+
+                # Values before sync
+                t0 = time.mktime(time.localtime())
+                m0 = time.monotonic()
                 network.get_local_time("Etc/UTC")
+                # Values after sync
+                t1 = time.mktime(time.localtime())
+                m1 = time.monotonic()
+                # Time required to set the clock, in seconds.
+                lag = m1 - m0
+                # Clock drift, in seconds.
+                drift = (t1 - t0) - lag
+
                 # Check time again in an hour
                 next_time_update = time.mktime(time.localtime()) + 60 * 60
 
-                log("next clock update at {nextcheck}".format(nextcheck=format_time(time.localtime(next_time_update))))
+                network.push_to_io(FEED_LOG, "drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
+                log("drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
 
         # We can always call this. It will only do the update if needed.
         update_time_zone(zone_info[0], 0)
