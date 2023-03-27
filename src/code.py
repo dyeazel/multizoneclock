@@ -53,7 +53,7 @@ DEBUG = False
 SHOW_AM_PM = False
 FEED_LOG = "big-board.big-board-log"
 FEED_DRIFT = "big-board.big-board-drift"
-AUX_ZONE_TIME_S = 5
+AUX_ZONE_TIME_S = 3
 WARN_MINUTES = 55
 # ------------------------------------------------------------------------------------
 
