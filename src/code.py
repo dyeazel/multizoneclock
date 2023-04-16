@@ -94,7 +94,7 @@ class ClockLine():
 
     def SetTime(self, now, show_colon):
         hours = now[3]
-        if SHOW_AM_PM:
+        if appconfig["show_am_pm"]:
             if hours > 12:  # Handle times later than 12:59
                 hours -= 12
             elif not hours:  # Handle times between 0:00 and 0:59
@@ -126,11 +126,6 @@ class ClockLine():
 # ------------------------------------------------------------------------------------
 BLINK = True
 DEBUG = False
-SHOW_AM_PM = False
-FEED_LOG = "big-board.big-board-log"
-FEED_DRIFT = "big-board.big-board-drift"
-AUX_ZONE_TIME_S = 3
-WARN_MINUTES = 55
 # ------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------
@@ -269,7 +264,7 @@ def update_time_zone(zone, idx):
         # ------------------------------------------------------------
         log("getting timezone {zone} info".format(zone=zone.tz_abbr))
         set_status("api")
-        network.push_to_io(FEED_LOG,
+        network.push_to_io(appconfig["feed_log"],
             "getting timezone {zone} info".format(zone=zone.tz_abbr))
         # Get the time zone data
         set_status("TZ{idx}".format(idx=idx))
@@ -322,7 +317,7 @@ def update_time_zone(zone, idx):
             nextcheck=format_time(time.localtime(zone.next_check)))
         log(s)
         set_status("api")
-        network.push_to_io(FEED_LOG,
+        network.push_to_io(appconfig["feed_log"],
             "zone {zone} almanac: {almanac}".format(zone=idx, almanac=s))
 
 
@@ -359,7 +354,7 @@ def update_time(*, zone=None, index=0, show_colon=False):
 
     # This is a red rectangle that shows within five minutes of the hour.
     global warn_rect
-    if now[4] >= WARN_MINUTES:
+    if now[4] >= appconfig["warn_minutes"]:
         warn_rect.x = display.width - (60 - now[4]) * 5
     else:
         # Shove it off the right of the display.
@@ -393,7 +388,7 @@ while True:
             if next_time_update < now_s:
                 msg = "Updating clock from {time}".format(time=format_time(time.localtime()))
                 set_status("api")
-                network.push_to_io(FEED_LOG, msg)
+                network.push_to_io(appconfig["feed_log"], msg)
                 log(msg)
                 set_status("RTC")
 
@@ -412,7 +407,7 @@ while True:
                 # Check time again in an hour
                 next_time_update = time.mktime(time.localtime()) + 60 * 60
 
-                network.push_to_io(FEED_LOG, "drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
+                network.push_to_io(appconfig["feed_log"], "drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
                 log("drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
 
         # We can always call this. It will only do the update if needed.
@@ -428,7 +423,7 @@ while True:
             # We can always call this. It will only do the update if needed.
             update_time_zone(zone_info[aux_zone_index], aux_zone_index)
             # Set this after we update the timezone info, because the update is expensive
-            next_aux_zone_time = time.mktime(time.localtime()) + AUX_ZONE_TIME_S
+            next_aux_zone_time = time.mktime(time.localtime()) + appconfig["aux_time_zone_s"]
 
     except BrokenPipeError as e:
         print("BrokenPipeError")
