@@ -67,16 +67,14 @@ class ClockLine():
 
         self.ClockGroup = displayio.Group()
 
-        top = appconfig["clock_y_offset"]
-
         self.label_hours.anchor_point = (1.0, 0)
-        self.label_hours.anchored_position = (max_hr_width, top)
+        self.label_hours.anchored_position = (max_hr_width, 0)
 
         self.label_separator.anchor_point = (0, 1.0)
-        self.label_separator.anchored_position = (max_hr_width, ht + top)
+        self.label_separator.anchored_position = (max_hr_width, ht)
 
         self.label_minutes.anchor_point = (0, 0)
-        self.label_minutes.anchored_position = (max_hr_width + width_separator, top)
+        self.label_minutes.anchored_position = (max_hr_width + width_separator, 0)
 
         self.ClockGroup.append(self.label_hours)
         self.ClockGroup.append(self.label_separator)
@@ -86,7 +84,7 @@ class ClockLine():
 
         self.zone_label = Label(label_font)
         self.zone_label.anchor_point = (0, 1.0)
-        self.zone_label.anchored_position = (self.CloockWidth + 1, ht + top)
+        self.zone_label.anchored_position = (self.CloockWidth + 1, ht)
         self.ClockGroup.append(self.zone_label)
 
     def SetClockColor(self, color):
@@ -203,9 +201,13 @@ for idx in range(len(clock_lines)):
 # Solid blue line separating the two times.
 rect = Rect(0, (display.height // 2) - 1, display.width, 1, fill=0x000055)
 group.append(rect)
+
 # Cyan bar to show the seconds.
-seconds_rect = Rect(0, (display.height // 2), 5, 1, fill=0x005555)
+seconds_width = display.width / 12
+seconds_incr = (display.width - seconds_width) / 60
+seconds_rect = Rect(0, (display.height // 2), round(seconds_width), 1, fill=0x005555)
 group.append(seconds_rect)
+
 # Red box within 5 minutes of the hour.
 warn_rect = Rect(display.width, (display.height // 2) - 1 - 3, 25, 3, fill=0x550000)
 group.append(warn_rect)
@@ -364,7 +366,9 @@ def update_time(*, zone=None, index=0, show_colon=False):
 
     # Move the seconds indicator each time.
     global seconds_rect
-    seconds_rect.x = now[5]
+    x = round(now[5] * seconds_incr)
+    if x != seconds_rect.x:
+        seconds_rect.x = x
 
 update_time(zone=zone_info[0], show_colon=True)  # Display whatever time is on the board
 update_time(zone=zone_info[1], show_colon=True)  # Display whatever time is on the board
