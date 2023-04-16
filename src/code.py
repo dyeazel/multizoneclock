@@ -162,6 +162,9 @@ except ImportError:
 # --- Display setup ---
 hardware = Matrix()
 display = hardware.display
+# This is used for PyPortal and MagTag.
+# network = hardware.network
+# This is used for Matrix Portal.
 network = Network(status_neopixel=board.NEOPIXEL, debug=False)
 
 # --- Drawing setup ---
