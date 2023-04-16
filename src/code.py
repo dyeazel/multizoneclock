@@ -57,6 +57,8 @@ class ClockLine():
             if (i == 23):
                 max_hr_width = max_w
         
+        ht = temp_label.bounding_box[3]
+
         temp_label.text = ":"
         width_separator = temp_label.bounding_box[2]
 
@@ -81,8 +83,8 @@ class ClockLine():
         group.append(self.ClockGroup)
 
         self.zone_label = Label(label_font)
-        self.zone_label.anchor_point = (0, 0)
-        self.zone_label.anchored_position = (self.CloockWidth, 0)
+        self.zone_label.anchor_point = (0, 1.0)
+        self.zone_label.anchored_position = (self.CloockWidth, ht)
         self.ClockGroup.append(self.zone_label)
 
     def SetClockColor(self, color):
