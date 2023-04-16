@@ -1,7 +1,6 @@
 appconfig = {
-    'clock_font': 'font/mono-numbers-14.bdf'
-    'clock_width': 41,
-    'clock_y_offset': 0,
+    'clock_font': 'font/mono-numbers-14.bdf',
+    'clock_y_offset': -6,
     'label_font': 'terminalio.FONT',
     'show_am_pm': False,
     'feed_log': "big-board.big-board-log",

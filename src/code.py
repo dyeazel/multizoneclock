@@ -67,14 +67,16 @@ class ClockLine():
 
         self.ClockGroup = displayio.Group()
 
-        self.label_hours.anchor_point = (1.0, 0)
-        self.label_hours.anchored_position = (max_hr_width, 0)
+        top = appconfig["clock_y_offset"]
 
-        self.label_separator.anchor_point = (0, 0)
-        self.label_separator.anchored_position = (max_hr_width, 0)
+        self.label_hours.anchor_point = (1.0, 0)
+        self.label_hours.anchored_position = (max_hr_width, top)
+
+        self.label_separator.anchor_point = (0, 1.0)
+        self.label_separator.anchored_position = (max_hr_width, ht + top)
 
         self.label_minutes.anchor_point = (0, 0)
-        self.label_minutes.anchored_position = (max_hr_width + width_separator, 0)
+        self.label_minutes.anchored_position = (max_hr_width + width_separator, top)
 
         self.ClockGroup.append(self.label_hours)
         self.ClockGroup.append(self.label_separator)
@@ -84,7 +86,7 @@ class ClockLine():
 
         self.zone_label = Label(label_font)
         self.zone_label.anchor_point = (0, 1.0)
-        self.zone_label.anchored_position = (self.CloockWidth, ht)
+        self.zone_label.anchored_position = (self.CloockWidth + 1, ht + top)
         self.ClockGroup.append(self.zone_label)
 
     def SetClockColor(self, color):
