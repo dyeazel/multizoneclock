@@ -39,9 +39,83 @@ class ZoneInfo():
         self.next_check = 0
 
 class ClockLine():
-    def __init__(self, clock_font):
-        self.clock_label = Label(clock_font)
-        self.zone_label = Label(terminalio.FONT)
+    def __init__(self, clock_font, label_font):
+        self.label_hours = Label(clock_font)
+        self.label_separator = Label(clock_font)
+        self.label_minutes = Label(clock_font)
+            
+        global group
+
+        # This is a temporary label that we'll use for measuring stuff
+        temp_label = Label(clock_font)
+        max_hr_width = 0
+        max_w = 0
+        for i in range(0, 60):
+            temp_label.text = "{value:02d}".format(value=i)
+            max_w = max(max_w, temp_label.bounding_box[2])
+
+            if (i == 23):
+                max_hr_width = max_w
+        
+        temp_label.text = ":"
+        width_separator = temp_label.bounding_box[2]
+
+        self.CloockWidth = max_hr_width + width_separator + max_w
+        print("width: {}, {}, {}".format(max_hr_width, width_separator, max_w))
+
+        self.ClockGroup = displayio.Group()
+
+        self.label_hours.anchor_point = (1.0, 0)
+        self.label_hours.anchored_position = (max_hr_width, 0)
+
+        self.label_separator.anchor_point = (0, 0)
+        self.label_separator.anchored_position = (max_hr_width, 0)
+
+        self.label_minutes.anchor_point = (0, 0)
+        self.label_minutes.anchored_position = (max_hr_width + width_separator, 0)
+
+        self.ClockGroup.append(self.label_hours)
+        self.ClockGroup.append(self.label_separator)
+        self.ClockGroup.append(self.label_minutes)
+
+        group.append(self.ClockGroup)
+
+        self.zone_label = Label(label_font)
+        self.zone_label.anchor_point = (0, 0)
+        self.zone_label.anchored_position = (self.CloockWidth, 0)
+        self.ClockGroup.append(self.zone_label)
+
+    def SetClockColor(self, color):
+        self.label_hours.color = color
+        self.label_separator.color = color
+        self.label_minutes.color = color
+
+    def SetTime(self, now, show_colon):
+        hours = now[3]
+        if SHOW_AM_PM:
+            if hours > 12:  # Handle times later than 12:59
+                hours -= 12
+            elif not hours:  # Handle times between 0:00 and 0:59
+                hours = 12
+
+        if hours < 10:
+            # Pad with a space
+            hours = " {hours}".format(hours=hours)
+        else:
+            hours = "{hours}".format(hours=hours)
+
+        minutes = now[4]
+        
+        if BLINK:
+            # Colon on for even seconds.
+            colon = ":" if show_colon or now[5] % 2 else " "
+        else:
+            colon = ":"
+
+        self.label_hours.text = "{}".format(hours)
+        self.label_separator.text = colon
+        self.label_minutes.text = "{minutes:02d}".format(minutes=minutes)
+
 
 # ------------------------------------------------------------------------------------
 
@@ -69,6 +143,7 @@ clock_lines = []
 zone_info = []
 # ------------------------------------------------------------------------------------
 
+from appconfig import appconfig
 from locations import locations
 print("found {} locations:".format(len(locations)))
 for idx in range(len(locations)):
@@ -83,8 +158,8 @@ except ImportError:
     raise
 
 # --- Display setup ---
-matrix = Matrix()
-display = matrix.display
+hardware = Matrix()
+display = hardware.display
 network = Network(status_neopixel=board.NEOPIXEL, debug=False)
 
 # --- Drawing setup ---
@@ -103,25 +178,25 @@ display.show(group)
 
 # Fonts: https://learn.adafruit.com/custom-fonts-for-pyportal-circuitpython-display
 if not DEBUG:
-    font = bitmap_font.load_font("font/mono-numbers-14.bdf")
+    font = bitmap_font.load_font(appconfig["clock_font"])
 else:
     font = terminalio.FONT
 
-clock_lines = [ ClockLine(font), ClockLine(font) ]
+if appconfig["label_font"] == "terminalio.FONT":
+    font2 = terminalio.FONT
+else:
+    font2 = bitmap_font.load_font(appconfig["label_font"])
+
+clock_lines = [ ClockLine(font, font2), ClockLine(font, font2) ]
 
 for idx in range(len(clock_lines)):
-    top = 8 + ((display.height // 2) + 1) * idx
+    top = 8 + ((display.height // 2) + 1) * idx + appconfig["clock_y_offset"]
 
-    clock_lines[idx].clock_label.x = 0
-    clock_lines[idx].clock_label.y = top
-    group.append(clock_lines[idx].clock_label)
-
-    clock_lines[idx].zone_label.x = 41
-    clock_lines[idx].zone_label.y = top - 1
-    group.append(clock_lines[idx].zone_label)
+    clock_lines[idx].ClockGroup.y = top
 
     clock_lines[idx].zone_label.color = 0x0000FF
     clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
+
 
 # Solid blue line separating the two times.
 rect = Rect(0, (display.height // 2) - 1, display.width, 1, fill=0x000055)
@@ -247,7 +322,7 @@ def update_time_zone(zone, idx):
 
 
 # Updates the time displayed
-def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=False):
+def update_time(*, zone=None, index=0, show_colon=False):
     # Current UTC time from our clock, in seconds.
     now_utc_s = time.mktime(time.localtime())
     # Current time in zone, in seconds.
@@ -263,49 +338,24 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
     else:
         clock_lines[index].zone_label.text = zone.tz_abbr
 
-    if hours is None:
-        hours = now[3]
-
     if zone.sunrise == zone.sunset:
         # No almanac informat yet. Show in red.
-        clock_lines[index].clock_label.color = color[2]
+        clock_lines[index].SetClockColor(color[2])
     elif (zone.sunrise < now_utc_s) and (now_utc_s < zone.sunset):
         # sunrise/sunset stored in UTC
         # daylight = green
-        clock_lines[index].clock_label.color = color[3]
+        clock_lines[index].SetClockColor(color[3])
     else:
         # night = red
-        clock_lines[index].clock_label.color = color[1]
+        clock_lines[index].SetClockColor(color[1])
 
-    if SHOW_AM_PM:
-        if hours > 12:  # Handle times later than 12:59
-            hours -= 12
-        elif not hours:  # Handle times between 0:00 and 0:59
-            hours = 12
+    clock_lines[index].SetTime(now, show_colon)
 
-    if hours < 10:
-        # Pad with a space
-        hours = " {hours}".format(hours=hours)
-    else:
-        hours = "{hours}".format(hours=hours)
-
-    if minutes is None:
-        minutes = now[4]
-
-    if BLINK:
-        # Colon on for even seconds.
-        colon = ":" if show_colon or now[5] % 2 else " "
-    else:
-        colon = ":"
-
-    clock_lines[index].clock_label.text = "{hours}{colon}{minutes:02d}".format(
-        hours=hours, minutes=minutes, colon=colon
-    )
 
     # This is a red rectangle that shows within five minutes of the hour.
     global warn_rect
-    if minutes >= WARN_MINUTES:
-        warn_rect.x = display.width - (60 - minutes) * 5
+    if now[4] >= WARN_MINUTES:
+        warn_rect.x = display.width - (60 - now[4]) * 5
     else:
         # Shove it off the right of the display.
         warn_rect.x = display.width
@@ -314,14 +364,8 @@ def update_time(*, zone=None, index=0, hours=None, minutes=None, show_colon=Fals
     global seconds_rect
     seconds_rect.x = now[5]
 
-    # Bounding box for the clock text, of you need it.
-    bbx, bby, bbwidth, bbh = clock_lines[index].clock_label.bounding_box
-    if DEBUG:
-        print("Label bounding box: {},{},{},{}".format(bbx, bby, bbwidth, bbh))
-        print("Label x: {} y: {}".format(clock_lines[index].clock_label.x, clock_lines[index].clock_label.y))
-
 update_time(zone=zone_info[0], show_colon=True)  # Display whatever time is on the board
-clock_lines[1].clock_label.text = "  :  "
+update_time(zone=zone_info[1], show_colon=True)  # Display whatever time is on the board
 
 while True:
     # Get the earliest next check.
