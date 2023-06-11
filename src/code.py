@@ -28,6 +28,9 @@ import adafruit_requests as requests
 class ZoneInfo():
     def __init__(self, config):
         self.utc_offset_sec = 0
+        if ('utc_offset' in config) and (config["utc_offset"] != -999):
+            self.utc_offset_sec = config["utc_offset"] * 60 * 60
+
         self.is_utc = False
         self.tz_abbr = config["tz_abbr"]
         self.latitude = config["latitude"]
@@ -141,11 +144,8 @@ zone_info = []
 # ------------------------------------------------------------------------------------
 
 from appconfig import appconfig
+
 from locations import locations
-print("found {} locations:".format(len(locations)))
-for idx in range(len(locations)):
-    print(locations[idx]["tz_abbr"])
-    zone_info.append(ZoneInfo(locations[idx]))
 
 # Get wifi details and more from a secrets.py file
 try:
@@ -195,7 +195,8 @@ for idx in range(len(clock_lines)):
     clock_lines[idx].ClockGroup.y = top
 
     clock_lines[idx].zone_label.color = 0x0000FF
-    clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
+    if idx < len(zone_info):
+        clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
 
 
 # Solid blue line separating the two times.
@@ -218,11 +219,55 @@ def add_seconds(value, seconds):
     return time.localtime(time.mktime(value) + seconds)
 
 
+def ensure_connected():
+    if not network.is_connected:
+        # Need a connection to update the information.
+        log("connecting")
+        set_status("net")
+        network.connect(2)
+
+    return network.is_connected
+
+
 # Formats a time_tuple as a string.
 def format_time(value):
     return "{year}-{month:02d}-{day:02d} {hours}:{minutes:02d}:{seconds:02d}".format(year=value[0], month=value[1], day=value[2], hours=value[3], minutes=value[4], seconds=value[5])
 
 
+def load_locations(loc):
+    global zone_info
+
+    zone_info = []
+    print("found {} locations:".format(len(loc)))
+    for idx in range(len(loc)):
+        print(loc[idx])
+        zone_info.append(ZoneInfo(loc[idx]))
+
+
+def get_config():
+    if ensure_connected():
+        print("getting config")
+        set_status("cfg")
+        start_time = time.monotonic()
+        # Get the most recent item from the feed.
+        response = network.get_io_feed(appconfig["config_feed"])
+        print("response in {sec}".format(sec=time.monotonic() - start_time))
+        # The value is a JSON string, so we need to parse it.
+        response = json.loads(response['last_value'])        
+
+        # Build a list of locations.
+        locations = []
+        # First element is the user's location.
+        loc = {'descr': 'local', 'latitude': response['latitude'], 'longitude': response['longitude'], 'tz_abbr': 'LCL'}
+        locations.append(loc)
+        # Append any locations from the value we read.
+        for idx in range(len(response['locations'])):
+            locations.append(response['locations'][idx])        
+        
+        # Load for use by the clock.
+        load_locations(locations)
+
+        
 def log(message):
     print("{time}: {msg}".format(time=format_time(time.localtime()), msg=message))
 
@@ -257,11 +302,7 @@ def update_time_zone(zone, idx):
     if zone.next_check < time.mktime(time.localtime()):
         # Time to refresh the zone info.
 
-        if not network.is_connected:
-            # Need a connection to update the information.
-            log("connecting")
-            set_status("net")
-            network.connect(2)
+        ensure_connected()
 
         # ------------------------------------------------------------
         # --    Time zone info from lat/long.
@@ -370,6 +411,10 @@ def update_time(*, zone=None, index=0, show_colon=False):
     if x != seconds_rect.x:
         seconds_rect.x = x
 
+# Get the locations
+# load_locations(locations)
+get_config()
+
 update_time(zone=zone_info[0], show_colon=True)  # Display whatever time is on the board
 update_time(zone=zone_info[1], show_colon=True)  # Display whatever time is on the board
 
@@ -386,10 +431,7 @@ while True:
                 show_colon=True
             )  # Make sure a colon is displayed while updating
 
-            if not network.is_connected:
-                log("connecting")
-                set_status("net")
-                network.connect(2)
+            ensure_connected()
 
             if next_time_update < now_s:
                 msg = "Updating clock from {time}".format(time=format_time(time.localtime()))
