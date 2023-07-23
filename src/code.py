@@ -252,8 +252,20 @@ def get_config():
         # Get the most recent item from the feed.
         response = network.get_io_feed(appconfig["config_feed"])
         print("response in {sec}".format(sec=time.monotonic() - start_time))
+
+        last_update = parse_time(response["updated_at"])
+        now_utc_s = time.mktime(time.localtime())
+        age_days = (now_utc_s - last_update) / 60 / 60 / 24
+        if (age_days > 5):
+            # The API expires data after seven days.
+            # Re-upload the data to force a new update date.
+            log("re-uploading feed {feed}".format(feed=appconfig["config_feed"]))
+            network.push_to_io(appconfig["config_feed"], response['last_value'])
+        else:
+            log("feed {feed} is {d} days old".format(feed=appconfig["config_feed"], d=age_days))
+
         # The value is a JSON string, so we need to parse it.
-        response = json.loads(response['last_value'])        
+        response = json.loads(response['last_value'])
 
         # Build a list of locations.
         locations = []
@@ -262,12 +274,12 @@ def get_config():
         locations.append(loc)
         # Append any locations from the value we read.
         for idx in range(len(response['locations'])):
-            locations.append(response['locations'][idx])        
-        
+            locations.append(response['locations'][idx])
+
         # Load for use by the clock.
         load_locations(locations)
 
-        
+
 def log(message):
     print("{time}: {msg}".format(time=format_time(time.localtime()), msg=message))
 
@@ -316,7 +328,7 @@ def update_time_zone(zone, idx):
         start_time = time.monotonic()
         response = network.fetch_data("https://www.timeapi.io/api/timezone/coordinate?latitude={lat}&longitude={lng}".format(lat=zone.latitude, lng=zone.longitude))
         print("response in {sec}".format(sec=time.monotonic() - start_time))
-
+        
         # Parse the JSON response into a dictionary.
         response = json.loads(response)
         zone.utc_offset_sec = int(response["currentUtcOffset"]["seconds"])
