@@ -485,6 +485,11 @@ while True:
                 # Check time again in an hour
                 next_time_update = time.mktime(time.localtime()) + 60 * 60
 
+                # Next update time, in time_tuple.
+                next_check = time.localtime(next_time_update)
+                # Update at about 5 minutes past the hour.
+                next_time_update = next_time_update - (next_check[4] * 60) + 5 * 60
+
                 network.push_to_io(appconfig["feed_log"], "drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
                 log("drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
 
