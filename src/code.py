@@ -338,6 +338,9 @@ def update_time_zone(zone, idx):
         zone.dst_end = parse_time(response["dstInterval"]["dstEnd"])
         # ------------------------------------------------------------
 
+        # Calls can take a little. Update the display between.
+        update_display()
+
         # ------------------------------------------------------------
         # Get the almanac (sunrise/sunset) info.
         # ------------------------------------------------------------
@@ -353,6 +356,9 @@ def update_time_zone(zone, idx):
         zone.sunrise = parse_time(zone.almanac["sunrise"])
         zone.sunset = parse_time(zone.almanac["sunset"])
         # ------------------------------------------------------------
+
+        # Calls can take a little. Update the display between.
+        update_display()
 
         # Check again a minute after sunset and DST changes to get the
         # sunrise/sunset for the next day and new DST values.
@@ -376,6 +382,19 @@ def update_time_zone(zone, idx):
         set_status("api")
         network.push_to_io(appconfig["feed_log"],
             "zone {zone} almanac: {almanac}".format(zone=idx, almanac=s))
+
+
+# Updates the display
+def update_display():
+    global next_update
+
+    if next_update < time.monotonic():
+        # Only update the display once per second.
+        next_update = time.monotonic() + 1
+        # Always update the first line with zone_info[0]
+        update_time(zone=zone_info[0])
+        # Update the second line with the current auxilliary zone.
+        update_time(zone=zone_info[aux_zone_index], index = 1)
 
 
 # Updates the time displayed
@@ -407,7 +426,6 @@ def update_time(*, zone=None, index=0, show_colon=False):
         clock_lines[index].SetClockColor(color[1])
 
     clock_lines[index].SetTime(now, show_colon)
-
 
     # This is a red rectangle that shows within five minutes of the hour.
     global warn_rect
@@ -507,13 +525,7 @@ while True:
 
     clock_lines[1].zone_label.color = 0x0000FF
 
-    if next_update < time.monotonic():
-        # Only update the display once per second.
-        next_update = time.monotonic() + 1
-        # Always update the first line with zone_info[0]
-        update_time(zone=zone_info[0])
-        # Update the second line with the current auxilliary zone.
-        update_time(zone=zone_info[aux_zone_index], index = 1)
+    update_display()
 
     # Short nap to save power
     time.sleep(0.1)
