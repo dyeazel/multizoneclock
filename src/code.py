@@ -17,6 +17,10 @@ import terminalio
 from adafruit_display_shapes.rect import Rect
 from adafruit_display_text.label import Label
 from adafruit_bitmap_font import bitmap_font
+# This is used for PyPortal.
+# from adafruit_pyportal.network import Network
+#from adafruit_pyportal import PyPortal
+# This is used for Matrix Portal.
 from adafruit_matrixportal.network import Network
 from adafruit_matrixportal.matrix import Matrix
 import adafruit_requests as requests
@@ -155,8 +159,14 @@ except ImportError:
     raise
 
 # --- Display setup ---
+# This is used for Matrix Portal.
 hardware = Matrix()
+# This is used for PyPortal.
+# hardware = PyPortal()
+
 display = hardware.display
+
+# --- Network setup ---
 # This is used for PyPortal and MagTag.
 # network = hardware.network
 # This is used for Matrix Portal.
