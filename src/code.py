@@ -23,6 +23,7 @@ from adafruit_bitmap_font import bitmap_font
 # This is used for Matrix Portal.
 from adafruit_matrixportal.network import Network
 from adafruit_matrixportal.matrix import Matrix
+from adafruit_matrixportal.matrixportal import MatrixPortal
 import adafruit_requests as requests
 
 # ------------------------------------------------------------------------------------
@@ -50,7 +51,7 @@ class ClockLine():
         self.label_hours = Label(clock_font)
         self.label_separator = Label(clock_font)
         self.label_minutes = Label(clock_font)
-            
+
         global group
 
         # This is a temporary label that we'll use for measuring stuff
@@ -63,7 +64,7 @@ class ClockLine():
 
             if (i == 23):
                 max_hr_width = max_w
-        
+
         ht = temp_label.bounding_box[3]
 
         temp_label.text = ":"
@@ -87,21 +88,35 @@ class ClockLine():
         self.ClockGroup.append(self.label_separator)
         self.ClockGroup.append(self.label_minutes)
 
-        group.append(self.ClockGroup)
-
         self.zone_label = Label(label_font)
         self.zone_label.anchor_point = (0, 1.0)
         self.zone_label.anchored_position = (self.CloockWidth + 1, ht)
+        self.zone_label.scrolling = True
         self.ClockGroup.append(self.zone_label)
+
+        # PM marker. Default off.
+        self.pm_marker = Rect(max_hr_width + 1, 0, 1, 1, fill=0x000000)
+        self.ClockGroup.append(self.pm_marker)
+        # Color for the PM marker if it is visible.
+        self.pm_marker_color = 0x0000FF
+
+        group.append(self.ClockGroup)
 
     def SetClockColor(self, color):
         self.label_hours.color = color
         self.label_separator.color = color
         self.label_minutes.color = color
+        self.pm_marker_color = color
 
     def SetTime(self, now, show_colon):
+        self.pm_marker.fill = 0x000000
+
         hours = now[3]
         if appconfig["show_am_pm"]:
+            if hours >= 12:
+                # Turn on the PM marker before we adjust the hours.
+                self.pm_marker.fill = self.pm_marker_color
+
             if hours > 12:  # Handle times later than 12:59
                 hours -= 12
             elif not hours:  # Handle times between 0:00 and 0:59
@@ -114,7 +129,7 @@ class ClockLine():
             hours = "{hours}".format(hours=hours)
 
         minutes = now[4]
-        
+
         if BLINK:
             # Colon on for even seconds.
             colon = ":" if show_colon or now[5] % 2 else " "
@@ -160,7 +175,7 @@ except ImportError:
 
 # --- Display setup ---
 # This is used for Matrix Portal.
-hardware = Matrix()
+hardware = MatrixPortal()
 # This is used for PyPortal.
 # hardware = PyPortal()
 
@@ -170,7 +185,7 @@ display = hardware.display
 # This is used for PyPortal and MagTag.
 # network = hardware.network
 # This is used for Matrix Portal.
-network = Network(status_neopixel=board.NEOPIXEL, debug=False)
+network = hardware.network #Network(status_neopixel=board.NEOPIXEL, debug=False)
 
 # --- Drawing setup ---
 group = displayio.Group()  # Create a Group
@@ -209,7 +224,7 @@ for idx in range(len(clock_lines)):
         clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
 
 
-# Solid blue line separating the two times.
+# Solid line separating the two times.
 rect = Rect(0, (display.height // 2) - 1, display.width, 1, fill=0x000055)
 group.append(rect)
 
@@ -330,9 +345,9 @@ def update_time_zone(zone, idx):
         # --    Time zone info from lat/long.
         # ------------------------------------------------------------
         log("getting timezone {zone} info".format(zone=zone.tz_abbr))
-        set_status("api")
-        network.push_to_io(appconfig["feed_log"],
-            "getting timezone {zone} info".format(zone=zone.tz_abbr))
+        # set_status("api")
+        # network.push_to_io(appconfig["feed_log"],
+        #     "getting timezone {zone} info".format(zone=zone.tz_abbr))
         # Get the time zone data
         set_status("TZ{idx}".format(idx=idx))
         start_time = time.monotonic()
@@ -389,9 +404,9 @@ def update_time_zone(zone, idx):
             dst_end=format_time(time.localtime(zone.dst_end)),
             nextcheck=format_time(time.localtime(zone.next_check)))
         log(s)
-        set_status("api")
-        network.push_to_io(appconfig["feed_log"],
-            "zone {zone} almanac: {almanac}".format(zone=idx, almanac=s))
+        # set_status("api")
+        # network.push_to_io(appconfig["feed_log"],
+        #     "zone {zone} almanac: {almanac}".format(zone=idx, almanac=s))
 
 
 # Updates the display
@@ -475,8 +490,8 @@ while True:
 
             if next_time_update < now_s:
                 msg = "Updating clock from {time}".format(time=format_time(time.localtime()))
-                set_status("api")
-                network.push_to_io(appconfig["feed_log"], msg)
+                # set_status("api")
+                # network.push_to_io(appconfig["feed_log"], msg)
                 log(msg)
                 set_status("RTC")
 
@@ -517,6 +532,8 @@ while True:
             update_time_zone(zone_info[aux_zone_index], aux_zone_index)
             # Set this after we update the timezone info, because the update is expensive
             next_aux_zone_time = time.mktime(time.localtime()) + appconfig["aux_time_zone_s"]
+
+            hardware.scroll_text(0.05)
 
     except BrokenPipeError as e:
         print("BrokenPipeError")
