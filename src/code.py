@@ -47,10 +47,11 @@ class ZoneInfo():
         self.next_check = 0
 
 class ClockLine():
-    def __init__(self, clock_font, label_font):
+    def __init__(self, clock_font, clock_font_height, label_font, label_font_height):
         self.label_hours = Label(clock_font)
         self.label_separator = Label(clock_font)
         self.label_minutes = Label(clock_font)
+        self.clock_height = clock_font_height
 
         global group
 
@@ -66,6 +67,7 @@ class ClockLine():
                 max_hr_width = max_w
 
         ht = temp_label.bounding_box[3]
+        self.label_height = label_font_height
 
         temp_label.text = ":"
         width_separator = temp_label.bounding_box[2]
@@ -204,34 +206,45 @@ display.show(group)
 # Fonts: https://learn.adafruit.com/custom-fonts-for-pyportal-circuitpython-display
 if not DEBUG:
     font = bitmap_font.load_font(appconfig["clock_font"])
+    fontHeight = appconfig["clock_font_height"]
 else:
     font = terminalio.FONT
+    fontHeight = 8
 
 if appconfig["label_font"] == "terminalio.FONT":
     font2 = terminalio.FONT
 else:
     font2 = bitmap_font.load_font(appconfig["label_font"])
 
-clock_lines = [ ClockLine(font, font2), ClockLine(font, font2) ]
+font2Height = appconfig["label_font_height"]
 
+print("font heights: {}, {}".format(fontHeight, font2Height))
+
+
+clock_lines = [ ClockLine(font, fontHeight, font2, font2Height), ClockLine(font2, font2Height, font2, font2Height), ClockLine(font2, font2Height, font2, font2Height) ]
+
+top = 0
 for idx in range(len(clock_lines)):
-    top = 8 + ((display.height // 2) + 1) * idx + appconfig["clock_y_offset"]
-
     clock_lines[idx].ClockGroup.y = top
 
     clock_lines[idx].zone_label.color = 0x0000FF
     if idx < len(zone_info):
         clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
+    
+    top += clock_lines[idx].clock_height
+    if idx == 0:
+        top += 3
 
 
+line_y = clock_lines[0].clock_height + 2
 # Solid line separating the two times.
-rect = Rect(0, (display.height // 2) - 1, display.width, 1, fill=0x000055)
+rect = Rect(0, line_y, display.width, 1, fill=0x000055)
 group.append(rect)
 
 # Cyan bar to show the seconds.
 seconds_width = display.width / 12
 seconds_incr = (display.width - seconds_width) / 60
-seconds_rect = Rect(0, (display.height // 2), round(seconds_width), 1, fill=0x005555)
+seconds_rect = Rect(0, line_y + 1, round(seconds_width), 1, fill=0x005555)
 group.append(seconds_rect)
 
 # Red box within 5 minutes of the hour.
@@ -419,7 +432,9 @@ def update_display():
         # Always update the first line with zone_info[0]
         update_time(zone=zone_info[0])
         # Update the second line with the current auxilliary zone.
-        update_time(zone=zone_info[aux_zone_index], index = 1)
+        update_time(zone=zone_info[1], index = 1)
+        # Update the third line with the current auxilliary zone.
+        update_time(zone=zone_info[aux_zone_index], index = 2)
 
 
 # Updates the time displayed
@@ -520,13 +535,14 @@ while True:
 
         # We can always call this. It will only do the update if needed.
         update_time_zone(zone_info[0], 0)
+        update_time_zone(zone_info[1], 1)
 
         if next_aux_zone_time <= time.mktime(time.localtime()):
             # Time to switch to the next zone
             aux_zone_index += 1
             if aux_zone_index >= len(zone_info):
                 # Rollover
-                aux_zone_index = 1
+                aux_zone_index = 2
 
             # We can always call this. It will only do the update if needed.
             update_time_zone(zone_info[aux_zone_index], aux_zone_index)
