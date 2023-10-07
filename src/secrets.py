@@ -7,4 +7,6 @@ secrets = {
     'timezone' : "America/Chicago", # http://worldtimeapi.org/timezones
     'aio_username': "my_adafruit_io_username",
     'aio_key': "my_adafruit_io_key"
-    }
+    # 'config_endpoint': 'https://sample.endpoint.com/api/endpoint',
+    'config_feed': 'my_adafruit_io_feed'
+}

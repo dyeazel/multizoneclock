@@ -283,39 +283,68 @@ def load_locations(loc):
 
 
 def get_config():
+    KEY_ENDPOINT = "config_endpoint"
+    KEY_FEED = "config_feed"
+
+    feed_valid = False
+
     if ensure_connected():
         print("getting config")
         set_status("cfg")
         start_time = time.monotonic()
-        # Get the most recent item from the feed.
-        response = network.get_io_feed(appconfig["config_feed"])
-        print("response in {sec}".format(sec=time.monotonic() - start_time))
 
-        last_update = parse_time(response["updated_at"])
-        now_utc_s = time.mktime(time.localtime())
-        age_days = (now_utc_s - last_update) / 60 / 60 / 24
-        if (age_days > 5):
-            # The API expires data after seven days.
-            # Re-upload the data to force a new update date.
-            log("re-uploading feed {feed}".format(feed=appconfig["config_feed"]))
-            network.push_to_io(appconfig["config_feed"], response['last_value'])
+        if KEY_ENDPOINT in secrets:
+            # Call the config endpoint
+            response = network.fetch_data(secrets[KEY_ENDPOINT])
+            # Parse the JSON response into a dictionary.
+            response = json.loads(response)
+
+            feed_valid = true
         else:
-            log("feed {feed} is {d} days old".format(feed=appconfig["config_feed"], d=age_days))
+            # Get the most recent item from the feed.
+            if KEY_FEED in appconfig:
+                # Previous versions stored this in appconfig.
+                feed = appconfig[KEY_FEED]
+                feed_valid = True
+            elif KEY_FEED in secrets:
+                feed = secrets[KEY_FEED]
+                feed_valid = True
 
-        # The value is a JSON string, so we need to parse it.
-        response = json.loads(response['last_value'])
+            if feed_valid:
+                # We found a feed.
 
-        # Build a list of locations.
-        locations = []
-        # First element is the user's location.
-        loc = {'descr': 'local', 'latitude': response['latitude'], 'longitude': response['longitude'], 'tz_abbr': 'LCL'}
-        locations.append(loc)
-        # Append any locations from the value we read.
-        for idx in range(len(response['locations'])):
-            locations.append(response['locations'][idx])
+                # Get the feed.
+                response = network.get_io_feed(feed)
+                print("response in {sec}".format(sec=time.monotonic() - start_time))
 
-        # Load for use by the clock.
-        load_locations(locations)
+                last_update = parse_time(response["updated_at"])
+                now_utc_s = time.mktime(time.localtime())
+                age_days = (now_utc_s - last_update) / 60 / 60 / 24
+                if (age_days > 5):
+                    # The API expires data after seven days.
+                    # Re-upload the data to force a new update date.
+                    log("re-uploading feed {feed}".format(feed=feed))
+                    network.push_to_io(feed, response['last_value'])
+                else:
+                    log("feed {feed} is {d} days old".format(feed=feed, d=age_days))
+
+                # The value is a JSON string, so we need to parse it.
+                response = json.loads(response['last_value'])
+
+        if feed_valid:
+            # Build a list of locations from the feed.
+            feed_locations = []
+            # First element is the user's location.
+            loc = {'descr': 'local', 'latitude': response['latitude'], 'longitude': response['longitude'], 'tz_abbr': 'LCL'}
+            feed_locations.append(loc)
+            # Append any locations from the value we read.
+            for idx in range(len(response['locations'])):
+                feed_locations.append(response['locations'][idx])
+            # Load for use by the clock.
+            load_locations(feed_locations)
+        else:
+            # Use locations.py
+            load_locations(locations)
 
 
 def log(message):
