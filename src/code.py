@@ -9,8 +9,8 @@
 
 import json
 import time
-import board
-import busio
+# import board
+# import busio
 import displayio
 import re
 import terminalio
@@ -52,7 +52,8 @@ class ClockLine():
         self.label_separator = Label(clock_font)
         self.label_minutes = Label(clock_font)
         self.clock_height = clock_font_height
-
+        self.show_label = True
+        
         global group
 
         # This is a temporary label that we'll use for measuring stuff
@@ -203,10 +204,15 @@ tile_grid = displayio.TileGrid(bitmap, pixel_shader=color)
 group.append(tile_grid)  # Add the TileGrid to the Group
 display.show(group)
 
+aux_zones = appconfig["aux_zones"]
+
 # Fonts: https://learn.adafruit.com/custom-fonts-for-pyportal-circuitpython-display
 if not DEBUG:
     font = bitmap_font.load_font(appconfig["clock_font"])
     fontHeight = appconfig["clock_font_height"]
+    if fontHeight == 0:
+        # Default to half of the display height.
+        fontHeight = display.height // 2 - 3
 else:
     font = terminalio.FONT
     fontHeight = 8
@@ -220,26 +226,53 @@ font2Height = appconfig["label_font_height"]
 
 print("font heights: {}, {}".format(fontHeight, font2Height))
 
+# Number of aux zones to show.
+print("{} aux zones".format(aux_zones))
 
-clock_lines = [ ClockLine(font, fontHeight, font2, font2Height), ClockLine(font2, font2Height, font2, font2Height), ClockLine(font2, font2Height, font2, font2Height) ]
+clock_lines = [ ClockLine(font, fontHeight, font2, font2Height) ]
+for idx in range(aux_zones):
+    if aux_zones == 1:
+        # Just one extra line, so use the same clock font.
+        clock_lines.append(ClockLine(font, fontHeight, font2, font2Height))
+    else:
+        clock_lines.append(ClockLine(font2, font2Height, font2, font2Height))
 
 top = 0
 for idx in range(len(clock_lines)):
+    if aux_zones == 1:
+        # For one aux zone, we just use the top and bottom halves of the display.
+        top = 8 + ((display.height // 2) + 1) * idx + appconfig["clock_y_offset"]
+
     clock_lines[idx].ClockGroup.y = top
+    if (aux_zones == 4) and (idx > 0):
+        # Auxilliary zone
+        # Don't show the label if we have four zones.
+        clock_lines[idx].show_label = False
+        if (idx % 2) == 0:
+            # Even numbered idx that isn't the primary zone.
+            # Move to the second column.
+            clock_lines[idx].ClockGroup.x = display.width // 2 + 2
+            # Odd numbered idx.
+            # Move to the next line.
+            top += clock_lines[idx].clock_height
+    else:
+        top += clock_lines[idx].clock_height
+        if idx == 0:
+            top += 3
+
+    print("zone {} at ({}, {})".format(idx, clock_lines[idx].ClockGroup.x, clock_lines[idx].ClockGroup.y))
 
     clock_lines[idx].zone_label.color = 0x0000FF
-    if idx < len(zone_info):
-        clock_lines[idx].zone_label.text = zone_info[idx].tz_abbr
-    
-    top += clock_lines[idx].clock_height
-    if idx == 0:
-        top += 3
 
 
 line_y = clock_lines[0].clock_height + 2
-# Solid line separating the two times.
+# Solid horizontal line separating the two times.
 rect = Rect(0, line_y, display.width, 1, fill=0x000055)
 group.append(rect)
+if aux_zones == 4:
+    # Solid vertical line separating columns.
+    rect = Rect(display.width // 2 - 1, line_y, 1, display.height - line_y, fill=0x000055)
+    group.append(rect)
 
 # Cyan bar to show the seconds.
 seconds_width = display.width / 12
@@ -262,7 +295,10 @@ def ensure_connected():
         # Need a connection to update the information.
         log("connecting")
         set_status("net")
-        network.connect(2)
+        try:
+            network.connect(2)
+        except OSError as e:
+            log(e)
 
     return network.is_connected
 
@@ -274,12 +310,16 @@ def format_time(value):
 
 def load_locations(loc):
     global zone_info
+    global aux_zone_index
 
     zone_info = []
     print("found {} locations:".format(len(loc)))
     for idx in range(len(loc)):
         print(loc[idx])
         zone_info.append(ZoneInfo(loc[idx]))
+
+    # Start with either the last clock line or last zone.   
+    aux_zone_index = min(len(clock_lines), len(zone_info)) - 1
 
 
 def get_config():
@@ -299,7 +339,7 @@ def get_config():
             # Parse the JSON response into a dictionary.
             response = json.loads(response)
 
-            feed_valid = true
+            feed_valid = True
         else:
             # Get the most recent item from the feed.
             if KEY_FEED in appconfig:
@@ -370,8 +410,8 @@ def parse_time(value):
 
 # Shows a short status message in red in the time zone name area.
 def set_status(message):
-    clock_lines[1].zone_label.color = 0xFF0000
-    clock_lines[1].zone_label.text = message
+    clock_lines[0].zone_label.color = 0xFF0000
+    clock_lines[0].zone_label.text = message
 
 
 # Updates the UTC offset, DST start and end, and sunrise/sunset for a location.
@@ -458,16 +498,17 @@ def update_display():
     if next_update < time.monotonic():
         # Only update the display once per second.
         next_update = time.monotonic() + 1
-        # Always update the first line with zone_info[0]
-        update_time(zone=zone_info[0])
-        # Update the second line with the current auxilliary zone.
-        update_time(zone=zone_info[1], index = 1)
-        # Update the third line with the current auxilliary zone.
-        update_time(zone=zone_info[aux_zone_index], index = 2)
+
+        for idx in range(min(len(clock_lines), len(zone_info))):
+            if (aux_zone_index == -1) or (idx < aux_zones):
+                update_time(zone=zone_info[idx], clock_lines_index = idx)
+            else:
+                # Update the last line with the current auxilliary zone.
+                update_time(zone=zone_info[aux_zone_index], clock_lines_index = idx)
 
 
 # Updates the time displayed
-def update_time(*, zone=None, index=0, show_colon=False):
+def update_time(*, zone=None, clock_lines_index=0, show_colon=False):
     # Current UTC time from our clock, in seconds.
     now_utc_s = time.mktime(time.localtime())
     # Current time in zone, in seconds.
@@ -477,24 +518,25 @@ def update_time(*, zone=None, index=0, show_colon=False):
 
     if now[0] == 2000:
         # Should only get this before the RTC has been set.
-        clock_lines[index].zone_label.text = "???"
+        clock_lines[0].zone_label.text = "???"
     elif int(round(zone.utc_offset_sec, 0)) == 0:
-        clock_lines[index].zone_label.text = "UTC"
-    else:
-        clock_lines[index].zone_label.text = zone.tz_abbr
+        clock_lines[0].zone_label.text = "UTC"
+    elif (clock_lines_index == 0) or (aux_zones < 4):
+        clock_lines[clock_lines_index].zone_label.color = 0x0000FF
+        clock_lines[clock_lines_index].zone_label.text = zone.tz_abbr
 
     if zone.sunrise == zone.sunset:
         # No almanac informat yet. Show in red.
-        clock_lines[index].SetClockColor(color[2])
+        clock_lines[clock_lines_index].SetClockColor(color[2])
     elif (zone.sunrise < now_utc_s) and (now_utc_s < zone.sunset):
         # sunrise/sunset stored in UTC
         # daylight = green
-        clock_lines[index].SetClockColor(color[3])
+        clock_lines[clock_lines_index].SetClockColor(color[3])
     else:
         # night = red
-        clock_lines[index].SetClockColor(color[1])
+        clock_lines[clock_lines_index].SetClockColor(color[1])
 
-    clock_lines[index].SetTime(now, show_colon)
+    clock_lines[clock_lines_index].SetTime(now, show_colon)
 
     # This is a red rectangle that shows within five minutes of the hour.
     global warn_rect
@@ -515,7 +557,11 @@ def update_time(*, zone=None, index=0, show_colon=False):
 get_config()
 
 update_time(zone=zone_info[0], show_colon=True)  # Display whatever time is on the board
-update_time(zone=zone_info[1], show_colon=True)  # Display whatever time is on the board
+
+for idx in range(len(clock_lines)):
+    print("zone {} at ({}, {})".format(idx, clock_lines[idx].ClockGroup.x, clock_lines[idx].ClockGroup.y))
+    
+print("{} zone_info".format(len(zone_info)))
 
 while True:
     # Get the earliest next check.
@@ -562,19 +608,22 @@ while True:
                 network.push_to_io(appconfig["feed_log"], "drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
                 log("drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
 
-        # We can always call this. It will only do the update if needed.
-        update_time_zone(zone_info[0], 0)
-        update_time_zone(zone_info[1], 1)
+        for idx in range(len(zone_info)):
+            # We can always call this. It will only do the update if needed.
+            update_time_zone(zone_info[idx], idx)
 
         if next_aux_zone_time <= time.mktime(time.localtime()):
             # Time to switch to the next zone
-            aux_zone_index += 1
-            if aux_zone_index >= len(zone_info):
-                # Rollover
-                aux_zone_index = 2
-
-            # We can always call this. It will only do the update if needed.
-            update_time_zone(zone_info[aux_zone_index], aux_zone_index)
+            if len(zone_info) <= len(clock_lines):
+                # Enough clock lines to hold all of the specified timezones without rotating through.
+                # Set to -1 so everyone knows this.
+                aux_zone_index = -1
+            else:
+                aux_zone_index += 1
+                if aux_zone_index >= len(zone_info):
+                    # Rollover
+                    aux_zone_index = min(aux_zones, len(zone_info)) - 1
+            
             # Set this after we update the timezone info, because the update is expensive
             next_aux_zone_time = time.mktime(time.localtime()) + appconfig["aux_time_zone_s"]
 
@@ -583,17 +632,17 @@ while True:
     except BrokenPipeError as e:
         print("BrokenPipeError")
         print(e)
-        clock_lines[1].zone_label.text = "bpe"
+        clock_lines[0].zone_label.text = "bpe"
 
     except ConnectionError as e:
         print("ConnectionError")
         print(e)
-        clock_lines[1].zone_label.text = "c.e"
+        clock_lines[0].zone_label.text = "c.e"
 
     except OSError as e:
         print("OSError")
         print(e)
-        clock_lines[1].zone_label.text = "ose"
+        clock_lines[0].zone_label.text = "ose"
 
     except RuntimeError as e:
         print(e)
