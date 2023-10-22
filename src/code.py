@@ -608,6 +608,10 @@ while True:
                 network.push_to_io(appconfig["feed_log"], "drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
                 log("drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
 
+                # We already have this from startup, but get it every time so that location updates
+                # can be captured at least once per hour.
+                get_config()
+
         for idx in range(len(zone_info)):
             # We can always call this. It will only do the update if needed.
             update_time_zone(zone_info[idx], idx)
