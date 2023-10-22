@@ -281,7 +281,7 @@ seconds_rect = Rect(0, line_y + 1, round(seconds_width), 1, fill=0x005555)
 group.append(seconds_rect)
 
 # Red box within 5 minutes of the hour.
-warn_rect = Rect(display.width, (display.height // 2) - 1 - 3, 25, 3, fill=0x550000)
+warn_rect = Rect(display.width, line_y - 1, 25, 3, fill=0x550000)
 group.append(warn_rect)
 
 
