@@ -25,6 +25,9 @@ from adafruit_matrixportal.network import Network
 from adafruit_matrixportal.matrix import Matrix
 from adafruit_matrixportal.matrixportal import MatrixPortal
 import adafruit_requests as requests
+import util_network
+import util
+import util_time
 
 # ------------------------------------------------------------------------------------
 # --    Classes
@@ -285,27 +288,17 @@ warn_rect = Rect(display.width, line_y - 1, 25, 3, fill=0x550000)
 group.append(warn_rect)
 
 
-# Adds a specified number of seconds to a time_tuple
-def add_seconds(value, seconds):
-    return time.localtime(time.mktime(value) + seconds)
-
-
 def ensure_connected():
     if not network.is_connected:
         # Need a connection to update the information.
-        log("connecting")
+        util.log("connecting")
         set_status("net")
         try:
             network.connect(2)
         except OSError as e:
-            log(e)
+            util.log(e)
 
     return network.is_connected
-
-
-# Formats a time_tuple as a string.
-def format_time(value):
-    return "{year}-{month:02d}-{day:02d} {hours}:{minutes:02d}:{seconds:02d}".format(year=value[0], month=value[1], day=value[2], hours=value[3], minutes=value[4], seconds=value[5])
 
 
 def load_locations(loc):
@@ -357,16 +350,16 @@ def get_config():
                 response = network.get_io_feed(feed)
                 print("response in {sec}".format(sec=time.monotonic() - start_time))
 
-                last_update = parse_time(response["updated_at"])
+                last_update = util_time.parse_time(response["updated_at"])
                 now_utc_s = time.mktime(time.localtime())
                 age_days = (now_utc_s - last_update) / 60 / 60 / 24
                 if (age_days > 5):
                     # The API expires data after seven days.
                     # Re-upload the data to force a new update date.
-                    log("re-uploading feed {feed}".format(feed=feed))
+                    util.log("re-uploading feed {feed}".format(feed=feed))
                     network.push_to_io(feed, response['last_value'])
                 else:
-                    log("feed {feed} is {d} days old".format(feed=feed, d=age_days))
+                    util.log("feed {feed} is {d} days old".format(feed=feed, d=age_days))
 
                 # The value is a JSON string, so we need to parse it.
                 response = json.loads(response['last_value'])
@@ -387,27 +380,6 @@ def get_config():
             load_locations(locations)
 
 
-def log(message):
-    print("{time}: {msg}".format(time=format_time(time.localtime()), msg=message))
-
-
-# Converts an ISO formatted date/time string like 2023-02-17T14:35:27 to a time in seconds.
-def parse_time(value):
-    result = 0
-
-    m = re.search("(\d*)-(\d*)-(\d*)T(\d*):(\d*):(\d*)", value)
-    if m:
-        t = (
-            int(m.group(1)), int(m.group(2)), int(m.group(3)),
-            int(m.group(4)), int(m.group(5)), int(m.group(6)),
-            -1, -1, -1,
-        )
-
-        result = time.mktime(t)
-
-    return result
-
-
 # Shows a short status message in red in the time zone name area.
 def set_status(message):
     clock_lines[0].zone_label.color = 0xFF0000
@@ -426,7 +398,7 @@ def update_time_zone(zone, idx):
         # ------------------------------------------------------------
         # --    Time zone info from lat/long.
         # ------------------------------------------------------------
-        log("getting timezone {zone} info".format(zone=zone.tz_abbr))
+        util.log("getting timezone {zone} info".format(zone=zone.tz_abbr))
         # set_status("api")
         # network.push_to_io(appconfig["feed_log"],
         #     "getting timezone {zone} info".format(zone=zone.tz_abbr))
@@ -441,8 +413,8 @@ def update_time_zone(zone, idx):
         zone.utc_offset_sec = int(response["currentUtcOffset"]["seconds"])
         zone.tz_name = response["timeZone"]
         # Get the DST start and end in UTC, in seconds.
-        zone.dst_start = parse_time(response["dstInterval"]["dstStart"])
-        zone.dst_end = parse_time(response["dstInterval"]["dstEnd"])
+        zone.dst_start = util_time.parse_time(response["dstInterval"]["dstStart"])
+        zone.dst_end = util_time.parse_time(response["dstInterval"]["dstEnd"])
         # ------------------------------------------------------------
 
         # Calls can take a little. Update the display between.
@@ -451,7 +423,7 @@ def update_time_zone(zone, idx):
         # ------------------------------------------------------------
         # Get the almanac (sunrise/sunset) info.
         # ------------------------------------------------------------
-        log("getting almanac {zone} info".format(zone=idx))
+        util.log("getting almanac {zone} info".format(zone=idx))
         # Get the almanac (sunrise/sunset) data
         set_status("ss{idx}".format(idx=idx))
         start_time = time.monotonic()
@@ -460,8 +432,8 @@ def update_time_zone(zone, idx):
         # Parse the JSON response into a dictionary.
         zone.almanac = json.loads(response)["results"]
         # Get the sunrise and sunset in UTC, in seconds.
-        zone.sunrise = parse_time(zone.almanac["sunrise"])
-        zone.sunset = parse_time(zone.almanac["sunset"])
+        zone.sunrise = util_time.parse_time(zone.almanac["sunrise"])
+        zone.sunset = util_time.parse_time(zone.almanac["sunset"])
         # ------------------------------------------------------------
 
         # Calls can take a little. Update the display between.
@@ -480,12 +452,12 @@ def update_time_zone(zone, idx):
             zone.next_check = now_s + 60 * 60 * 1
 
         s = "({sunrise}, {sunset}), ({dst_start}, {dst_end}) => {nextcheck}".format(
-            sunrise=format_time(time.localtime(zone.sunrise)),
-            sunset=format_time(time.localtime(zone.sunset)),
-            dst_start=format_time(time.localtime(zone.dst_start)),
-            dst_end=format_time(time.localtime(zone.dst_end)),
-            nextcheck=format_time(time.localtime(zone.next_check)))
-        log(s)
+            sunrise=util_time.format_time(time.localtime(zone.sunrise)),
+            sunset=util_time.format_time(time.localtime(zone.sunset)),
+            dst_start=util_time.format_time(time.localtime(zone.dst_start)),
+            dst_end=util_time.format_time(time.localtime(zone.dst_end)),
+            nextcheck=util_time.format_time(time.localtime(zone.next_check)))
+        util.log(s)
         # set_status("api")
         # network.push_to_io(appconfig["feed_log"],
         #     "zone {zone} almanac: {almanac}".format(zone=idx, almanac=s))
@@ -579,10 +551,10 @@ while True:
             ensure_connected()
 
             if next_time_update < now_s:
-                msg = "Updating clock from {time}".format(time=format_time(time.localtime()))
+                msg = "Updating clock from {time}".format(time=util_time.format_time(time.localtime()))
                 # set_status("api")
                 # network.push_to_io(appconfig["feed_log"], msg)
-                log(msg)
+                util.log(msg)
                 set_status("RTC")
 
                 # Values before sync
@@ -605,8 +577,8 @@ while True:
                 # Update at about 5 minutes past the hour.
                 next_time_update = next_time_update - (next_check[4] * 60) + 5 * 60
 
-                network.push_to_io(appconfig["feed_log"], "drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
-                log("drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=format_time(time.localtime(next_time_update))))
+                network.push_to_io(appconfig["feed_log"], "drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=util_time.format_time(time.localtime(next_time_update))))
+                util.log("drift: {drift}, lag: {lag} next clock update at {nextcheck}".format(drift=drift, lag=lag, nextcheck=util_time.format_time(time.localtime(next_time_update))))
 
                 # We already have this from startup, but get it every time so that location updates
                 # can be captured at least once per hour.
